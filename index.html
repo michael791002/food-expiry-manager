@@ -1,0 +1,2350 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>食品過期管理 v4.3</title>
+<style>
+:root {
+  font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:#1f2937;background:#f3f6f9;
+}
+*{box-sizing:border-box}
+body{margin:0;padding:22px}
+.app{max-width:1180px;margin:auto}
+.card{background:#fff;border-radius:16px;padding:18px;box-shadow:0 8px 24px rgba(0,0,0,.06);margin-bottom:16px}
+h1,h2,h3{margin-top:0}
+.sub,.small,.status{color:#667085}
+.small{font-size:12px;line-height:1.55}
+label{display:block;font-size:13px;color:#667085;margin:11px 0 5px}
+input,select,textarea,button{width:100%;font:inherit;border-radius:10px;border:1px solid #d6dce5;padding:11px 12px}
+button{border:0;background:#1686a7;color:#fff;font-weight:700;cursor:pointer}
+button.secondary{background:#667085}
+button.ghost{background:#eef4f7;color:#315c69}
+button.danger{background:#c74747}
+button.warn{background:#b7781d}
+button.linkbtn{background:transparent;color:#1686a7;padding:6px 0;width:auto;font-weight:700}
+button:disabled{opacity:.5;cursor:not-allowed}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.auth{max-width:520px;margin:50px auto}
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tabs button{width:auto}
+.active{background:#1686a7!important;color:#fff!important}
+.inactive{background:#eef4f7!important;color:#315c69!important}
+.status{min-height:20px;margin-top:10px;font-size:13px;line-height:1.5}
+.ok{color:#227a43}
+.err{color:#b63737}
+.topbar{display:flex;gap:12px;justify-content:space-between;align-items:center;margin-bottom:16px}
+.topbar .right{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.topbar button,.topbar select{width:auto}
+.layout{display:grid;grid-template-columns:350px 1fr;gap:18px}
+.food{border:1px solid #e6e9ee;border-radius:12px;padding:12px;margin-bottom:10px;display:flex;justify-content:space-between;gap:10px}
+.food.pending{border-style:dashed;background:#fffdf8}
+.food-title{font-size:17px;font-weight:800}
+.meta{font-size:13px;color:#667085;line-height:1.5;margin-top:4px}
+.actions{display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap;justify-content:flex-end}
+.actions button{width:auto;padding:7px 9px;font-size:12px}
+.badge{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:700;margin-top:6px}
+.badge.ok{background:#e9f7ef}
+.badge.warn{background:#fff5dd;color:#9a6414}
+.badge.danger{background:#fdecec;color:#b63737}
+.familybox{background:#f8fafc;border-radius:12px;padding:12px}
+.code{font-family:ui-monospace,monospace;font-size:20px;font-weight:800;letter-spacing:1px}
+.empty{text-align:center;color:#98a2b3;padding:35px}
+.calendar-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.calendar-head button{width:auto}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.dow{text-align:center;font-size:12px;color:#667085;padding:6px}
+.day{min-height:92px;border:1px solid #e6e9ee;border-radius:10px;padding:7px}
+.day.muted{background:#fafafa;color:#bbb}
+.num{font-size:12px;color:#667085}
+.event{font-size:11px;background:#e9f6fa;color:#205c6d;border-radius:6px;padding:4px 6px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hidden{display:none!important}
+.splash{max-width:520px;margin:70px auto;text-align:center}
+.spinner{width:32px;height:32px;border:4px solid #e5e7eb;border-top-color:#1686a7;border-radius:50%;margin:18px auto;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.authlinks{display:flex;justify-content:flex-end;margin-top:6px}
+.codeinput{letter-spacing:4px;font-weight:800;text-align:center;font-size:20px}
+.syncbar{display:flex;gap:8px;align-items:center;padding:10px 12px;background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.04)}
+.syncdot{width:9px;height:9px;border-radius:50%;background:#98a2b3}
+.syncdot.dirty{background:#d18a22}
+.syncdot.syncing{background:#1686a7}
+.syncdot.synced{background:#26955a}
+.member{display:grid;grid-template-columns:1fr 150px auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid #eee}
+.member:last-child{border-bottom:0}
+.member .who{min-width:0}
+.member .email{font-size:12px;color:#667085;overflow:hidden;text-overflow:ellipsis}
+.member select,.member button{margin:0}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap}
+.toolbar button{width:auto}
+dialog{border:0;border-radius:16px;padding:0;max-width:560px;width:calc(100% - 30px);box-shadow:0 20px 60px rgba(0,0,0,.25)}
+dialog::backdrop{background:rgba(0,0,0,.35)}
+.modal{padding:20px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.modal-actions button{width:auto}
+.sectionline{height:1px;background:#eceff3;margin:18px 0}
+.danger-zone{border:1px solid #f0c4c4;background:#fff8f8;border-radius:12px;padding:14px}
+.notify-group{border:1px solid #e5e7eb;border-radius:12px;padding:12px;margin-top:10px}
+.notify-group-head{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.notify-group-head input{width:auto}
+.notify-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+.notify-inline{display:flex;gap:8px;align-items:center}
+.notify-inline input{width:auto}
+@media(max-width:600px){.notify-grid{grid-template-columns:1fr}}
+.ocr-preview-wrap{position:relative;margin-top:12px;background:#111;border-radius:12px;overflow:hidden;min-height:180px;display:flex;align-items:center;justify-content:center}
+#ocrCanvas{display:block;max-width:100%;height:auto;touch-action:none;cursor:crosshair}
+.ocr-help{font-size:12px;color:#667085;line-height:1.5;margin-top:8px}
+.ocr-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.ocr-toolbar button{width:auto}
+.ocr-results{margin-top:14px}
+.ocr-candidate{display:flex;gap:10px;align-items:center;border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin-top:8px;cursor:pointer}
+.ocr-candidate input{width:auto}
+.ocr-text{white-space:pre-wrap;background:#f8fafc;border-radius:10px;padding:10px;font-size:12px;color:#475467;max-height:140px;overflow:auto;margin-top:10px}
+.ocr-progress{height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin-top:10px}
+.ocr-progress > div{height:100%;width:0%;background:#1686a7;transition:width .2s}
+.scan-note{font-size:12px;color:#667085;margin-top:8px}
+
+.family-loading{text-align:center;padding:34px 10px}
+.family-loading .spinner{margin:0 auto 14px}
+@media(max-width:800px){
+  .layout{grid-template-columns:1fr}
+  .row{grid-template-columns:1fr}
+  .topbar{align-items:flex-start;flex-direction:column}
+  .day{min-height:70px}
+  .member{grid-template-columns:1fr}
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+</head>
+<body>
+<div class="app" data-build="v4.3">
+
+<section id="splash" class="card splash hidden">
+  <h1>食品過期管理</h1>
+  <div class="spinner"></div>
+  <div id="splashText" class="sub">正在恢復登入狀態…</div>
+</section>
+
+<section id="authCard" class="card auth">
+  <h1>食品過期管理</h1>
+
+  <div class="tabs">
+    <button id="loginTab" class="active" type="button">登入</button>
+    <button id="registerTab" class="inactive" type="button">建立帳號</button>
+  </div>
+
+  <form id="loginForm">
+    <div id="loginPane">
+      <label for="loginEmail">Email</label>
+      <input id="loginEmail" name="username" type="email" inputmode="email" autocomplete="username" required>
+
+      <label for="loginPassword">密碼</label>
+      <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
+
+      <div class="authlinks">
+        <button id="forgotBtn" class="linkbtn" type="button">忘記密碼？</button>
+      </div>
+
+      <button id="loginBtn" type="submit" style="margin-top:8px">登入</button>
+    </div>
+  </form>
+
+  <form id="registerForm" class="hidden">
+    <div id="registerPane">
+      <label for="regName">顯示名稱</label>
+      <input id="regName" name="name" autocomplete="name" placeholder="例如：小明" required>
+
+      <label for="regEmail">Email</label>
+      <input id="regEmail" name="email" type="email" inputmode="email" autocomplete="email" required>
+
+      <label for="regPassword">密碼（至少 8 碼）</label>
+      <input id="regPassword" name="new-password" type="password" autocomplete="new-password" minlength="8" required>
+
+      <button id="registerBtn" type="submit" style="margin-top:12px">建立帳號</button>
+    </div>
+  </form>
+
+  <div id="forgotPane" class="hidden">
+    <h3>重設密碼</h3>
+
+    <div id="forgotStep1">
+      <label for="forgotEmail">註冊 Email</label>
+      <input id="forgotEmail" type="email" inputmode="email" autocomplete="email">
+      <button id="sendResetCodeBtn" type="button" style="margin-top:12px">寄送 6 位數驗證碼</button>
+    </div>
+
+    <div id="forgotStep2" class="hidden">
+      <label for="resetCode">6 位數驗證碼</label>
+      <input id="resetCode" class="codeinput" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000">
+
+      <label for="newPassword">新密碼（至少 8 碼）</label>
+      <input id="newPassword" type="password" autocomplete="new-password" minlength="8">
+
+      <button id="resetPasswordBtn" type="button" style="margin-top:12px">設定新密碼</button>
+    </div>
+
+    <button id="backToLoginBtn" class="linkbtn" type="button" style="margin-top:12px">← 回登入</button>
+  </div>
+
+  <div id="authStatus" class="status"></div>
+</section>
+
+<section id="mainApp" class="hidden">
+  <div class="topbar">
+    <div>
+      <h1 style="margin-bottom:3px">食品過期管理</h1>
+      <div id="hello" class="sub"></div>
+    </div>
+
+    <div class="right">
+      <div class="syncbar">
+        <span id="syncDot" class="syncdot synced"></span>
+        <span id="syncText" class="small">已同步</span>
+        <button id="syncNowBtn" class="ghost" type="button">立即同步</button>
+      </div>
+
+      <select id="familySelect"></select>
+      <button id="groupAddBtn" class="ghost" type="button">新增 / 加入群組</button>
+      <button id="familyManageBtn" class="ghost" type="button">群組設定</button>
+      <button id="notificationBtn" class="ghost" type="button">提醒設定</button>
+      <button id="logoutBtn" class="secondary" type="button">登出</button>
+    </div>
+  </div>
+
+  <div id="noFamily" class="card hidden">
+    <h2>建立或加入群組</h2>
+
+    <div class="row">
+      <div>
+        <h3>建立新群組</h3>
+        <label for="newFamilyName">群組名稱</label>
+        <input id="newFamilyName" placeholder="例如：李家">
+        <button id="createFamilyBtn" type="button" style="margin-top:12px">建立群組</button>
+      </div>
+
+      <div>
+        <h3>加入既有群組</h3>
+        <label for="joinCode">群組邀請碼</label>
+        <input id="joinCode" placeholder="例如：ABCD-1234">
+        <button id="joinFamilyBtn" type="button" style="margin-top:12px">加入群組</button>
+      </div>
+    </div>
+
+    <div id="familyStatus" class="status"></div>
+  </div>
+
+  <div id="familyApp" class="layout hidden">
+    <div>
+      <section class="card">
+        <h2>群組資訊</h2>
+        <div id="familyInfo" class="familybox"></div>
+      </section>
+
+      <section class="card">
+        <h2>新增食品</h2>
+
+        <label for="name">食品名稱</label>
+        <input id="name" placeholder="例如：鮮奶">
+
+        <div class="row">
+          <div>
+            <label for="qty">數量</label>
+            <input id="qty" type="number" min="1" value="1">
+          </div>
+
+          <div>
+            <label for="location">位置</label>
+            <select id="location">
+              <option>冰箱</option>
+              <option>冷凍</option>
+              <option>常溫</option>
+              <option>其他</option>
+            </select>
+          </div>
+        </div>
+
+        <label for="expiry">到期日</label>
+        <input id="expiry" type="date">
+        <button id="scanExpiryBtn" class="ghost" type="button" style="margin-top:8px">📷 掃描食品日期</button>
+        <div class="scan-note">掃描只是輔助；辨識失敗時仍可直接手動輸入到期日。</div>
+
+        <label for="note">備註</label>
+        <textarea id="note" rows="2"></textarea>
+
+        <label for="newNotifyMode">Email 提醒</label>
+        <select id="newNotifyMode">
+          <option value="inherit">使用群組預設</option>
+          <option value="custom">自訂提前天數</option>
+          <option value="off">這項食品不提醒</option>
+        </select>
+        <div id="newNotifyDaysWrap" class="hidden">
+          <label for="newNotifyDays">提前幾天提醒</label>
+          <input id="newNotifyDays" type="number" min="0" max="365" value="3">
+        </div>
+
+        <button id="addBtn" type="button" style="margin-top:12px">新增食品</button>
+        <div id="foodStatus" class="status"></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="tabs">
+        <button id="listTab" class="active" type="button">食品清單</button>
+        <button id="calendarTab" class="inactive" type="button">到期日曆</button>
+      </div>
+
+      <div id="listView"></div>
+
+      <div id="calendarView" class="hidden">
+        <div class="calendar-head">
+          <button id="prevMonth" class="ghost" type="button">←</button>
+          <strong id="monthTitle"></strong>
+          <button id="nextMonth" class="ghost" type="button">→</button>
+        </div>
+        <div class="cal" id="calendar"></div>
+      </div>
+    </section>
+  </div>
+</section>
+
+
+<dialog id="ocrDialog">
+  <div class="modal">
+    <h2>掃描食品日期</h2>
+
+    <label for="ocrFile">拍照 / 選擇圖片</label>
+    <input id="ocrFile" type="file" accept="image/*" capture="environment">
+
+    <div id="ocrPreviewWrap" class="ocr-preview-wrap hidden">
+      <canvas id="ocrCanvas"></canvas>
+    </div>
+
+    <div id="ocrHelp" class="ocr-help hidden">
+      可直接辨識整張圖片，也可以在圖片上拖曳框選日期區域；框得越準，通常辨識越好。
+    </div>
+
+    <div class="ocr-toolbar">
+      <button id="ocrResetCropBtn" class="ghost hidden" type="button">清除框選</button>
+      <button id="ocrStartBtn" class="ghost" type="button" disabled>快速辨識</button>
+      <button id="ocrAdvancedBtn" class="ghost hidden" type="button">加強辨識（中 / 日文）</button>
+    </div>
+
+    <div id="ocrStatus" class="status"></div>
+
+    <div id="ocrProgressBox" class="ocr-progress hidden">
+      <div id="ocrProgressBar"></div>
+    </div>
+
+    <div id="ocrResults" class="ocr-results hidden">
+      <h3>辨識到的日期</h3>
+      <div id="ocrCandidateList"></div>
+      <div id="ocrRawText" class="ocr-text"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button id="ocrCloseBtn" class="secondary" type="button">關閉</button>
+      <button id="ocrApplyBtn" type="button" disabled>套用選取日期</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="editDialog">
+  <div class="modal">
+    <h2>編輯食品</h2>
+    <input id="editId" type="hidden">
+
+    <label for="editName">食品名稱</label>
+    <input id="editName">
+
+    <div class="row">
+      <div>
+        <label for="editQty">數量</label>
+        <input id="editQty" type="number" min="1">
+      </div>
+      <div>
+        <label for="editLocation">位置</label>
+        <select id="editLocation">
+          <option>冰箱</option>
+          <option>冷凍</option>
+          <option>常溫</option>
+          <option>其他</option>
+        </select>
+      </div>
+    </div>
+
+    <label for="editExpiry">到期日</label>
+    <input id="editExpiry" type="date">
+
+    <label for="editNote">備註</label>
+    <textarea id="editNote" rows="3"></textarea>
+
+    <label for="editNotifyMode">Email 提醒</label>
+    <select id="editNotifyMode">
+      <option value="inherit">使用群組預設</option>
+      <option value="custom">自訂提前天數</option>
+      <option value="off">這項食品不提醒</option>
+    </select>
+    <div id="editNotifyDaysWrap" class="hidden">
+      <label for="editNotifyDays">提前幾天提醒</label>
+      <input id="editNotifyDays" type="number" min="0" max="365" value="3">
+    </div>
+
+    <div class="modal-actions">
+      <button id="editCancelBtn" class="secondary" type="button">取消</button>
+      <button id="editSaveBtn" type="button">儲存修改</button>
+    </div>
+  </div>
+</dialog>
+
+
+
+<dialog id="notificationDialog">
+  <div class="modal">
+    <h2>提醒設定</h2>
+    <div id="notificationBody">
+      <div class="family-loading">
+        <div class="spinner"></div>
+        <h3 style="margin-bottom:6px">正在載入提醒設定…</h3>
+      </div>
+    </div>
+    <div id="notificationStatus" class="status"></div>
+    <div class="modal-actions">
+      <button id="notificationCloseBtn" class="secondary" type="button">關閉</button>
+      <button id="notificationSaveBtn" type="button">儲存提醒設定</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="groupDialog">
+  <div class="modal">
+    <h2>新增 / 加入群組</h2>
+
+    <div class="row">
+      <div>
+        <h3>建立新群組</h3>
+        <label for="modalNewGroupName">群組名稱</label>
+        <input id="modalNewGroupName" placeholder="例如：公司冰箱">
+        <button id="modalCreateGroupBtn" type="button" style="margin-top:12px">建立群組</button>
+      </div>
+
+      <div>
+        <h3>加入既有群組</h3>
+        <label for="modalJoinCode">群組邀請碼</label>
+        <input id="modalJoinCode" placeholder="例如：ABCD-1234">
+        <button id="modalJoinGroupBtn" type="button" style="margin-top:12px">加入群組</button>
+      </div>
+    </div>
+
+    <div id="groupDialogStatus" class="status"></div>
+
+    <div class="modal-actions">
+      <button id="groupDialogCloseBtn" class="secondary" type="button">關閉</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="familyDialog">
+  <div class="modal">
+    <h2>群組設定</h2>
+    <div id="familyManageBody"></div>
+    <div id="familyManageStatus" class="status"></div>
+    <div class="modal-actions">
+      <button id="familyCloseBtn" class="secondary" type="button">關閉</button>
+    </div>
+  </div>
+</dialog>
+
+</div>
+
+<script>
+const API_URL = 'https://script.google.com/macros/s/AKfycbybz7oq_oee7FmCZclj3AgzMjRzsN2HsAnnUT5EMR_6Sy3hQMIFDtsBeK8uhDX2s22Lag/exec';
+const TOKEN_KEY = 'food-family-session-v3';
+const LAST_EMAIL_KEY = 'food-family-last-email-v1';
+const SYNC_DELAY_MS = 30000;
+
+let token = localStorage.getItem(TOKEN_KEY) || '';
+let me = null;
+let foods = [];
+let currentFamilyId = '';
+let currentMonth = new Date();
+currentMonth.setDate(1);
+
+let pendingChanges = [];
+let syncTimer = null;
+let syncing = false;
+let currentFamilyDetails = null;
+let familyManageLoading = false;
+let notificationLoading = false;
+let notificationSettings = null;
+let loadFailed = false;
+
+const $ = id => document.getElementById(id);
+
+async function api(action, data = {}, timeoutMs = 25000) {
+  const body = new URLSearchParams({ action, ...data });
+  if (token) body.set('sessionToken', token);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const r = await fetch(API_URL, {
+      method:'POST',
+      body,
+      signal:controller.signal
+    });
+
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+
+    const obj = await r.json();
+
+    if (!obj.ok) {
+      const e = new Error(obj.error || '操作失敗');
+      e.apiError = true;
+      throw e;
+    }
+
+    return obj;
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('連線逾時，請稍後再試。');
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function show(id,on=true){ $(id).classList.toggle('hidden',!on); }
+
+function escapeHtml(s='') {
+  return String(s).replace(/[&<>"']/g,m=>({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
+  }[m]));
+}
+
+function setStatus(id,msg,kind='') {
+  const e=$(id); e.textContent=msg; e.className='status '+kind;
+}
+
+function setBusy(button,busy,busyText,normalText) {
+  button.disabled=busy; button.textContent=busy?busyText:normalText;
+}
+
+function uid() {
+  return 'tmp-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8);
+}
+
+function requestUid() {
+  if (crypto && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+
+  return 'req-' + Date.now().toString(36) + '-' +
+    Math.random().toString(36).slice(2,10);
+}
+
+async function safeGroupRequest(action,payload,statusId) {
+  const requestId=requestUid();
+  const data={...payload,requestId};
+
+  try {
+    return await api(action,data,30000);
+  } catch(e) {
+    // 後端有明確回覆的業務錯誤，不重試。
+    if(e.apiError) throw e;
+
+    setStatus(
+      statusId,
+      '伺服器回應較慢，正在確認操作結果，請不要重複按按鈕…'
+    );
+
+    // 第一次可能已成功但只是回傳逾時。
+    // 用完全相同 requestId 安全重試一次。
+    try {
+      return await api(action,data,45000);
+    } catch(e2) {
+      if(e2.apiError) throw e2;
+
+      // 仍沒有回應時，改查 RequestLog。
+      for(let i=0;i<5;i++) {
+        await new Promise(resolve=>setTimeout(resolve,1500));
+
+        try {
+          const check=await api('checkRequest',{
+            requestId,
+            requestAction:action
+          },20000);
+
+          if(
+            check.found &&
+            check.status==='done' &&
+            check.result
+          ) {
+            return {
+              ok:true,
+              ...check.result,
+              replayed:true
+            };
+          }
+        } catch {}
+      }
+
+      throw new Error(
+        '目前無法確認伺服器結果。請稍後重新整理頁面；系統已使用防重複 requestId，不需要立刻再次建立。'
+      );
+    }
+  }
+}
+
+
+function setSyncState(state,text) {
+  $('syncDot').className='syncdot '+state;
+  $('syncText').textContent=text;
+
+  if (loadFailed) {
+    $('syncNowBtn').textContent='重新載入';
+    $('syncNowBtn').disabled=false;
+  } else {
+    $('syncNowBtn').textContent='立即同步';
+    $('syncNowBtn').disabled = syncing || pendingChanges.length===0;
+  }
+}
+
+function scheduleSync() {
+  if (syncTimer) clearTimeout(syncTimer);
+
+  setSyncState(
+    'dirty',
+    `有 ${pendingChanges.length} 筆未同步變更（30 秒後自動同步）`
+  );
+
+  syncTimer=setTimeout(()=>syncPending(),SYNC_DELAY_MS);
+}
+
+function queueChange(change) {
+  // 同一筆資料的 update 盡量合併，避免連按 -1 造成一堆 change。
+  if (change.type === 'update') {
+    const existing = pendingChanges.find(x =>
+      x.type === 'update' && x.id === change.id
+    );
+    if (existing) {
+      existing.food = change.food;
+      existing.expectedUpdatedAt = change.expectedUpdatedAt;
+      scheduleSync();
+      return;
+    }
+  }
+
+  if (change.type === 'delete') {
+    pendingChanges = pendingChanges.filter(x =>
+      !(x.type === 'update' && x.id === change.id)
+    );
+  }
+
+  pendingChanges.push(change);
+  scheduleSync();
+}
+
+async function syncPending() {
+  if (syncing || !pendingChanges.length || !currentFamilyId) return;
+
+  syncing=true;
+  if(syncTimer) clearTimeout(syncTimer);
+  syncTimer=null;
+
+  setSyncState('syncing','同步中…');
+
+  const batch = pendingChanges.slice();
+
+  try {
+    const r = await api('syncChanges', {
+      familyId: currentFamilyId,
+      changes: JSON.stringify(batch)
+    }, 30000);
+
+    const appliedKeys = new Set((r.applied || []).map(x=>x.clientKey));
+    pendingChanges = pendingChanges.filter(ch => !appliedKeys.has(ch.clientKey));
+
+    // 後端回傳正式資料，直接套回本地，包含 tmp id -> 正式 id。
+    for (const item of (r.items || [])) {
+      if (item.tempId) {
+        const f = foods.find(x=>x.id===item.tempId);
+        if (f) {
+          Object.assign(f,item.food);
+
+          // 新增資料同步成功後，清除前端待同步標記。
+          delete f._pending;
+        }
+      } else if (item.food) {
+        const i=foods.findIndex(x=>x.id===item.food.id);
+        if(i>=0) foods[i]=item.food;
+      }
+    }
+
+    if ((r.deletedIds||[]).length) {
+      foods = foods.filter(f=>!r.deletedIds.includes(f.id));
+    }
+
+    render();
+
+    if ((r.conflicts || []).length) {
+      setSyncState('dirty',`有 ${r.conflicts.length} 筆衝突，已保留未同步狀態`);
+      alert('有資料在其他裝置被修改，部分變更未寫入。請重新同步資料後再確認。');
+    } else if (pendingChanges.length) {
+      scheduleSync();
+    } else {
+      setSyncState('synced','已同步');
+    }
+  } catch(e) {
+    if(/沒有編輯權限|只有 Owner|Viewer/.test(e.message)) {
+      // 權限可能已被另一台裝置改成 Viewer。
+      // 本地未同步變更不能繼續保留，否則會無限重試。
+      pendingChanges=[];
+      if(syncTimer) clearTimeout(syncTimer);
+      syncTimer=null;
+
+      setSyncState('syncing','權限已變更，正在重新載入…');
+
+      alert(
+        '你的群組權限已變更，目前的未同步修改不會寫入。\n' +
+        '系統將重新載入最新資料。'
+      );
+
+      await loadFamily();
+    } else {
+      setSyncState('dirty',`同步失敗：${e.message}`);
+      scheduleSync();
+    }
+  } finally {
+    syncing=false;
+    $('syncNowBtn').disabled = pendingChanges.length===0;
+  }
+}
+
+$('syncNowBtn').onclick = async () => {
+  if (loadFailed) {
+    await loadFamily();
+  } else {
+    await syncPending();
+  }
+};
+
+window.addEventListener('beforeunload', e => {
+  // 瀏覽器基於安全限制，不允許自訂「是否要同步？」的離開提示文字。
+  // 只要還有未同步變更，就觸發瀏覽器原生的離開確認。
+  if (pendingChanges.length) {
+    e.preventDefault();
+    e.returnValue='';
+  }
+});
+
+function showLoginMode(mode) {
+  show('loginForm',mode==='login');
+  show('registerForm',mode==='register');
+  show('forgotPane',mode==='forgot');
+  $('loginTab').className=mode==='login'?'active':'inactive';
+  $('registerTab').className=mode==='register'?'active':'inactive';
+  setStatus('authStatus','');
+}
+
+$('loginTab').onclick=()=>showLoginMode('login');
+$('registerTab').onclick=()=>showLoginMode('register');
+$('forgotBtn').onclick=()=>{
+  $('forgotEmail').value=$('loginEmail').value.trim();
+  show('forgotStep1',true); show('forgotStep2',false); showLoginMode('forgot');
+};
+$('backToLoginBtn').onclick=()=>showLoginMode('login');
+
+$('registerForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const btn=$('registerBtn');
+  try {
+    setBusy(btn,true,'建立中…','建立帳號');
+    await api('register',{
+      displayName:$('regName').value.trim(),
+      email:$('regEmail').value.trim(),
+      password:$('regPassword').value
+    });
+    $('loginEmail').value=$('regEmail').value.trim();
+    showLoginMode('login');
+    setStatus('authStatus','帳號建立完成，請登入。','ok');
+  } catch(e2) {
+    setStatus('authStatus',e2.message,'err');
+  } finally {
+    setBusy(btn,false,'建立中…','建立帳號');
+  }
+});
+
+$('loginForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const btn=$('loginBtn');
+  let slowTimer=null;
+
+  try {
+    setBusy(btn,true,'登入中…','登入');
+    setStatus('authStatus','正在驗證帳號…');
+
+    slowTimer=setTimeout(()=>{
+      setStatus(
+        'authStatus',
+        '第一次登入可能正在升級舊密碼格式，請稍候，不需要重複按登入。',
+        ''
+      );
+    },8000);
+
+    const r=await api('login',{
+      email:$('loginEmail').value.trim(),
+      password:$('loginPassword').value
+    },120000);
+
+    token=r.sessionToken;
+    localStorage.setItem(TOKEN_KEY,token);
+
+    // 只記住最後一次成功登入的 Email，不儲存密碼。
+    localStorage.setItem(
+      LAST_EMAIL_KEY,
+      $('loginEmail').value.trim()
+    );
+
+    me=r.user;
+    me.families=r.families||[];
+    enterMain();
+  } catch(e2) {
+    setStatus('authStatus',e2.message,'err');
+  } finally {
+    if(slowTimer) clearTimeout(slowTimer);
+    setBusy(btn,false,'登入中…','登入');
+  }
+});
+
+$('sendResetCodeBtn').onclick=async()=>{
+  const btn=$('sendResetCodeBtn');
+  const email=$('forgotEmail').value.trim();
+  if(!email) return setStatus('authStatus','請輸入 Email。','err');
+  try {
+    setBusy(btn,true,'寄送中…','寄送 6 位數驗證碼');
+    await api('requestPasswordReset',{email},30000);
+    show('forgotStep1',false); show('forgotStep2',true);
+    setStatus('authStatus','如果這個 Email 有註冊，驗證碼已寄出。','ok');
+  } catch(e) {
+    setStatus('authStatus',e.message,'err');
+  } finally {
+    setBusy(btn,false,'寄送中…','寄送 6 位數驗證碼');
+  }
+};
+
+$('resetPasswordBtn').onclick=async()=>{
+  const btn=$('resetPasswordBtn');
+  try {
+    const email=$('forgotEmail').value.trim();
+    const code=$('resetCode').value.trim();
+    const newPassword=$('newPassword').value;
+    if(!/^\d{6}$/.test(code)) throw new Error('驗證碼必須是 6 位數。');
+    if(newPassword.length<8) throw new Error('新密碼至少 8 碼。');
+    setBusy(btn,true,'更新中…','設定新密碼');
+    await api('resetPassword',{email,code,newPassword},30000);
+    $('loginEmail').value=email;
+    $('loginPassword').value='';
+    showLoginMode('login');
+    setStatus('authStatus','密碼已更新，請使用新密碼登入。','ok');
+  } catch(e) {
+    setStatus('authStatus',e.message,'err');
+  } finally {
+    setBusy(btn,false,'更新中…','設定新密碼');
+  }
+};
+
+function enterMain() {
+  show('splash',false); show('authCard',false); show('mainApp',true);
+  $('hello').textContent=`你好，${me.displayName}（${me.email}）`;
+  renderFamilies(me.families||[]);
+}
+
+async function restoreSession() {
+  if(!token) { show('splash',false); show('authCard',true); return; }
+  show('authCard',false); show('mainApp',false); show('splash',true);
+
+  try {
+    const r=await api('me',{},20000);
+    me=r.user; me.families=r.families||[];
+    enterMain();
+  } catch(e) {
+    const invalid=/尚未登入|登入已過期|使用者不存在/.test(e.message);
+    if(invalid) {
+      token=''; localStorage.removeItem(TOKEN_KEY);
+      show('splash',false); show('authCard',true);
+      setStatus('authStatus','登入狀態已過期，請重新登入。','err');
+      return;
+    }
+    $('splashText').textContent='暫時無法連線，請重新整理頁面再試。';
+  }
+}
+
+$('logoutBtn').onclick=async()=>{
+  if(!confirm('確定要登出嗎？')) return;
+
+  if(pendingChanges.length) {
+    const syncFirst=confirm(
+      '目前還有未同步的資料。\n\n' +
+      '按「確定」：先同步再登出\n' +
+      '按「取消」：留在目前頁面'
+    );
+
+    if(!syncFirst) return;
+
+    await syncPending();
+
+    if(pendingChanges.length) {
+      alert('資料尚未同步完成，暫時不登出。');
+      return;
+    }
+  }
+
+  // 先保留舊 token，讓後端可以在背景將 Session 作廢。
+  const oldToken=token;
+
+  // 本機立即登出，不等待 Apps Script / Sheet。
+  token='';
+  localStorage.removeItem(TOKEN_KEY);
+  me=null;
+  foods=[];
+  pendingChanges=[];
+
+  show('mainApp',false);
+  show('splash',false);
+  show('authCard',true);
+  showLoginMode('login');
+
+  $('loginPassword').value='';
+  setStatus('authStatus','已登出。','ok');
+
+  // 背景 best-effort 通知後端刪除舊 Session。
+  // 即使 Apps Script 此時較慢，也不影響使用者畫面。
+  if(oldToken) {
+    const body=new URLSearchParams({
+      action:'logout',
+      sessionToken:oldToken
+    });
+
+    fetch(API_URL,{
+      method:'POST',
+      body,
+      keepalive:true
+    }).catch(()=>{});
+  }
+};
+
+function renderFamilies(families) {
+  me.families=families;
+  const sel=$('familySelect');
+  sel.innerHTML='';
+
+  if(!families.length) {
+    show('noFamily'); show('familyApp',false);
+    sel.classList.add('hidden'); $('familyManageBtn').classList.add('hidden'); $('groupAddBtn').classList.remove('hidden');
+    setSyncState('synced','沒有群組資料');
+    return;
+  }
+
+  show('noFamily',false); show('familyApp');
+  sel.classList.remove('hidden'); $('familyManageBtn').classList.remove('hidden'); $('groupAddBtn').classList.remove('hidden');
+
+  for(const f of families) {
+    const o=document.createElement('option');
+    o.value=f.familyId; o.textContent=f.familyName; sel.appendChild(o);
+  }
+
+  currentFamilyId=(families.find(x=>x.familyId===currentFamilyId)||families[0]).familyId;
+  sel.value=currentFamilyId;
+  loadFamily();
+}
+
+$('familySelect').onchange=async()=>{
+  if(pendingChanges.length) {
+    await syncPending();
+    if(pendingChanges.length) {
+      alert('目前還有未同步資料，請先完成同步。');
+      $('familySelect').value=currentFamilyId;
+      return;
+    }
+  }
+  currentFamilyId=$('familySelect').value;
+  loadFamily();
+};
+
+$('createFamilyBtn').onclick=async()=>{
+  const btn=$('createFamilyBtn');
+  try {
+    const familyName=$('newFamilyName').value.trim();
+    if(!familyName) throw new Error('請輸入群組名稱。');
+
+    setBusy(btn,true,'建立中…','建立群組');
+    setStatus('familyStatus','正在建立群組，請不要重複送出…');
+
+    const r=await safeGroupRequest(
+      'createFamily',
+      {familyName},
+      'familyStatus'
+    );
+
+    if(!me.families.some(x=>x.familyId===r.family.familyId)) {
+      me.families=[...(me.families||[]),r.family];
+    }
+
+    currentFamilyId=r.family.familyId;
+    renderFamilies(me.families);
+    setStatus('familyStatus','群組建立完成。','ok');
+  } catch(e) {
+    setStatus('familyStatus',e.message,'err');
+  } finally {
+    setBusy(btn,false,'建立中…','建立群組');
+  }
+};
+
+$('joinFamilyBtn').onclick=async()=>{
+  const btn=$('joinFamilyBtn');
+  try {
+    const inviteCode=$('joinCode').value.trim();
+    if(!inviteCode) throw new Error('請輸入群組邀請碼。');
+
+    setBusy(btn,true,'加入中…','加入群組');
+    setStatus('familyStatus','正在加入群組，請不要重複送出…');
+
+    const r=await safeGroupRequest(
+      'joinFamily',
+      {inviteCode},
+      'familyStatus'
+    );
+
+    if(!me.families.some(x=>x.familyId===r.family.familyId)) {
+      me.families=[...(me.families||[]),r.family];
+    }
+
+    currentFamilyId=r.family.familyId;
+    renderFamilies(me.families);
+    setStatus('familyStatus','已加入群組。','ok');
+  } catch(e) {
+    setStatus('familyStatus',e.message,'err');
+  } finally {
+    setBusy(btn,false,'加入中…','加入群組');
+  }
+};
+
+
+function currentGroup() {
+  return (me?.families || []).find(x => x.familyId === currentFamilyId) || null;
+}
+
+function canEditCurrentGroup() {
+  const role=currentGroup()?.role || '';
+  return role==='owner' || role==='member';
+}
+
+function applyRoleUi() {
+  const editable=canEditCurrentGroup();
+  const fam=currentGroup();
+
+  // 新增食品整區保留可見，但 Viewer 明確顯示唯讀並鎖住輸入。
+  const ids=['name','qty','location','expiry','note','scanExpiryBtn','newNotifyMode','newNotifyDays','addBtn'];
+
+  for(const id of ids) {
+    const el=$(id);
+    if(el) el.disabled=!editable;
+  }
+
+  const card=$('addBtn')?.closest('.card');
+  if(card) {
+    let notice=card.querySelector('.viewer-readonly-notice');
+
+    if(!editable) {
+      if(!notice) {
+        notice=document.createElement('div');
+        notice.className='viewer-readonly-notice status';
+        notice.style.marginBottom='10px';
+        notice.style.color='#667085';
+        card.insertBefore(notice,card.querySelector('label'));
+      }
+
+      notice.textContent='目前角色為 Viewer，只能查看群組資料，不能新增或修改食品。';
+    } else if(notice) {
+      notice.remove();
+    }
+  }
+
+  if(fam) {
+    const info=$('familyInfo');
+    if(info) {
+      const roleLine=info.querySelector('.role-line');
+      if(roleLine) roleLine.textContent='角色：'+fam.role;
+    }
+  }
+}
+
+async function loadFamily(retryCount = 0) {
+  // 切換群組時才應該沒有未同步變更；
+  // 一般重新載入失敗不再把 UI 鎖死。
+  loadFailed=false;
+  setSyncState('synced', retryCount ? '重新載入中…' : '載入中…');
+
+  const fam=me.families.find(x=>x.familyId===currentFamilyId);
+  if(!fam) return;
+
+  $('familyInfo').innerHTML=`
+    <div><b>${escapeHtml(fam.familyName)}</b></div>
+    <div class="small role-line">角色：${escapeHtml(fam.role)}</div>
+    ${fam.role==='owner'
+      ? `<div style="margin-top:10px">邀請碼</div>
+         <div class="code">${escapeHtml(fam.inviteCode)}</div>`
+      : ''
+    }
+  `;
+
+  try {
+    const r=await api('listFoods',{familyId:currentFamilyId},35000);
+
+    const famNow=currentGroup();
+    if(famNow && r.myRole) {
+      famNow.role=r.myRole;
+    }
+
+    foods=r.foods||[];
+    applyRoleUi();
+    render();
+
+    loadFailed=false;
+    setStatus('foodStatus','');
+    setSyncState('synced','已同步');
+  } catch(e) {
+    // Apps Script 偶爾冷啟動，第一次失敗時自動再試一次。
+    if (retryCount < 1) {
+      setSyncState('syncing','連線較慢，正在重試…');
+      await new Promise(resolve=>setTimeout(resolve,1200));
+      return loadFamily(retryCount+1);
+    }
+
+    loadFailed=true;
+    setStatus('foodStatus','食品資料載入失敗：'+e.message,'err');
+    setSyncState('dirty','載入失敗：'+e.message);
+  }
+}
+
+$('addBtn').onclick=()=>{
+  try {
+    if(!canEditCurrentGroup()) {
+      throw new Error('Viewer 只能查看資料，不能新增食品。');
+    }
+
+    const name=$('name').value.trim();
+    const expiry=$('expiry').value;
+    if(!name||!expiry) throw new Error('請填食品名稱與到期日');
+
+    const tempId=uid();
+    const food={
+      id:tempId,
+      name,
+      qty:Math.max(1,Number($('qty').value||1)),
+      location:$('location').value,
+      expiry,
+      note:$('note').value.trim(),
+      notifyMode:$('newNotifyMode').value || 'inherit',
+      notifyDaysBefore:$('newNotifyMode').value==='custom' ? Math.max(0,Number($('newNotifyDays').value||0)) : '',
+      updatedAt:'',
+      _pending:true
+    };
+
+    foods.push(food);
+
+    queueChange({
+      clientKey:uid(),
+      type:'add',
+      tempId,
+      food:clientFoodPayload(food)
+    });
+
+    $('name').value=''; $('qty').value='1'; $('note').value=''; $('newNotifyMode').value='inherit'; show('newNotifyDaysWrap',false);
+    render();
+    setStatus('foodStatus','已加入本機，稍後自動同步。','ok');
+  } catch(e) {
+    setStatus('foodStatus',e.message,'err');
+  }
+};
+
+window.consume=id=>{
+  if(!canEditCurrentGroup()) {
+    alert('Viewer 只能查看資料，不能修改食品。');
+    return;
+  }
+
+  const f=foods.find(x=>x.id===id);
+  if(!f) return;
+
+  f.qty=Number(f.qty)-1;
+
+  if(f.qty<=0) {
+    foods=foods.filter(x=>x.id!==id);
+
+    if(id.startsWith('tmp-')) {
+      pendingChanges=pendingChanges.filter(x=>x.tempId!==id);
+      if(pendingChanges.length) scheduleSync();
+      else setSyncState('synced','已同步');
+    } else {
+      queueChange({
+        clientKey:uid(),type:'delete',id,
+        expectedUpdatedAt:f.updatedAt||''
+      });
+    }
+  } else if(id.startsWith('tmp-')) {
+    const add=pendingChanges.find(x=>x.type==='add'&&x.tempId===id);
+    if(add) add.food.qty=f.qty;
+    scheduleSync();
+  } else {
+    queueChange({
+      clientKey:uid(),
+      type:'update',
+      id,
+      expectedUpdatedAt:f.updatedAt||'',
+      food:clientFoodPayload(f)
+    });
+  }
+
+  render();
+};
+
+window.removeFood=id=>{
+  if(!canEditCurrentGroup()) {
+    alert('Viewer 只能查看資料，不能刪除食品。');
+    return;
+  }
+
+  if(!confirm('確定刪除？')) return;
+
+  const f=foods.find(x=>x.id===id);
+  foods=foods.filter(x=>x.id!==id);
+
+  if(id.startsWith('tmp-')) {
+    pendingChanges=pendingChanges.filter(x=>x.tempId!==id);
+    if(pendingChanges.length) scheduleSync();
+    else setSyncState('synced','已同步');
+  } else {
+    queueChange({
+      clientKey:uid(),
+      type:'delete',
+      id,
+      expectedUpdatedAt:f?.updatedAt||''
+    });
+  }
+
+  render();
+};
+
+window.openEdit=id=>{
+  if(!canEditCurrentGroup()) {
+    alert('Viewer 只能查看資料，不能編輯食品。');
+    return;
+  }
+
+  const f=foods.find(x=>x.id===id);
+  if(!f) return;
+
+  $('editId').value=id;
+  $('editName').value=f.name;
+  $('editQty').value=f.qty;
+  $('editLocation').value=f.location;
+  $('editExpiry').value=f.expiry;
+  $('editNote').value=f.note||'';
+  $('editNotifyMode').value=f.notifyMode||'inherit';
+  $('editNotifyDays').value=(f.notifyDaysBefore!=='' && f.notifyDaysBefore!=null) ? f.notifyDaysBefore : 3;
+  show('editNotifyDaysWrap',$('editNotifyMode').value==='custom');
+  $('editDialog').showModal();
+};
+
+$('newNotifyMode').onchange=()=>{
+  show('newNotifyDaysWrap',$('newNotifyMode').value==='custom');
+};
+
+$('editNotifyMode').onchange=()=>{
+  show('editNotifyDaysWrap',$('editNotifyMode').value==='custom');
+};
+
+$('editCancelBtn').onclick=()=>$('editDialog').close();
+
+$('editSaveBtn').onclick=()=>{
+  const id=$('editId').value;
+  const f=foods.find(x=>x.id===id);
+  if(!f) return $('editDialog').close();
+
+  const oldUpdatedAt=f.updatedAt||'';
+
+  f.name=$('editName').value.trim();
+  f.qty=Math.max(1,Number($('editQty').value||1));
+  f.location=$('editLocation').value;
+  f.expiry=$('editExpiry').value;
+  f.note=$('editNote').value.trim();
+  f.notifyMode=$('editNotifyMode').value||'inherit';
+  f.notifyDaysBefore=f.notifyMode==='custom' ? Math.max(0,Number($('editNotifyDays').value||0)) : '';
+  f._pending=true;
+
+  if(id.startsWith('tmp-')) {
+    const add=pendingChanges.find(x=>x.type==='add'&&x.tempId===id);
+    if(add) add.food=clientFoodPayload(f);
+    scheduleSync();
+  } else {
+    queueChange({
+      clientKey:uid(),
+      type:'update',
+      id,
+      expectedUpdatedAt:oldUpdatedAt,
+      food:clientFoodPayload(f)
+    });
+  }
+
+  $('editDialog').close();
+  render();
+};
+
+function clientFoodPayload(f) {
+  return {
+    name:f.name,
+    qty:Number(f.qty),
+    location:f.location,
+    expiry:f.expiry,
+    note:f.note||'',
+    notifyMode:f.notifyMode||'inherit',
+    notifyDaysBefore:(f.notifyMode||'inherit')==='custom' ? Math.max(0,Number(f.notifyDaysBefore||0)) : ''
+  };
+}
+
+function foodReminderLabel(f) {
+  const mode=f.notifyMode||'inherit';
+  if(mode==='off') return '不提醒';
+  if(mode==='custom') return `提前 ${Number(f.notifyDaysBefore||0)} 天`;
+  return '使用群組預設';
+}
+
+function daysLeft(s) {
+  const t=new Date(); t.setHours(0,0,0,0);
+  return Math.round((new Date(s+'T00:00:00')-t)/86400000);
+}
+
+function badgeInfo(d) {
+  if(d<0) return ['danger',`已過期 ${-d} 天`];
+  if(d===0) return ['danger','今天到期'];
+  if(d<=3) return ['warn',`剩 ${d} 天`];
+  return ['ok',`剩 ${d} 天`];
+}
+
+function renderList() {
+  const box=$('listView');
+  const sorted=[...foods].sort((a,b)=>a.expiry.localeCompare(b.expiry));
+
+  if(!sorted.length) {
+    box.innerHTML='<div class="empty">目前沒有食品資料</div>';
+    return;
+  }
+
+  box.innerHTML=sorted.map(f=>{
+    const [c,t]=badgeInfo(daysLeft(f.expiry));
+    return `
+      <div class="food ${f._pending?'pending':''}">
+        <div>
+          <div class="food-title">${escapeHtml(f.name)} ×${f.qty}</div>
+          <div class="meta">
+            到期：${escapeHtml(f.expiry)}<br>
+            位置：${escapeHtml(f.location)}
+            ${f.note?`<br>備註：${escapeHtml(f.note)}`:''}
+            <br>提醒：${escapeHtml(foodReminderLabel(f))}
+          </div>
+          <span class="badge ${c}">${t}</span>
+          ${f._pending?'<span class="badge warn">待同步</span>':''}
+        </div>
+        <div class="actions">
+          ${canEditCurrentGroup()
+            ? `<button class="ghost" onclick="openEdit('${f.id}')">編輯</button>
+               <button class="ghost" onclick="consume('${f.id}')">-1</button>
+               <button class="danger" onclick="removeFood('${f.id}')">刪除</button>`
+            : `<span class="small">唯讀</span>`
+          }
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderCalendar() {
+  const y=currentMonth.getFullYear(),m=currentMonth.getMonth();
+  $('monthTitle').textContent=`${y} 年 ${m+1} 月`;
+
+  let h=['日','一','二','三','四','五','六'].map(x=>`<div class="dow">${x}</div>`).join('');
+  const first=new Date(y,m,1);
+  const start=new Date(y,m,1-first.getDay());
+
+  for(let i=0;i<42;i++) {
+    const d=new Date(start); d.setDate(start.getDate()+i);
+    const ds=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const ev=foods.filter(f=>f.expiry===ds);
+
+    h+=`
+      <div class="day ${d.getMonth()!==m?'muted':''}">
+        <div class="num">${d.getDate()}</div>
+        ${ev.map(f=>`<div class="event">${escapeHtml(f.name)} ×${f.qty}</div>`).join('')}
+      </div>
+    `;
+  }
+
+  $('calendar').innerHTML=h;
+}
+
+function render() { renderList(); renderCalendar(); }
+
+$('listTab').onclick=()=>{
+  show('listView'); show('calendarView',false);
+  $('listTab').className='active'; $('calendarTab').className='inactive';
+};
+$('calendarTab').onclick=()=>{
+  show('listView',false); show('calendarView');
+  $('listTab').className='inactive'; $('calendarTab').className='active';
+  renderCalendar();
+};
+$('prevMonth').onclick=()=>{currentMonth.setMonth(currentMonth.getMonth()-1);renderCalendar();};
+$('nextMonth').onclick=()=>{currentMonth.setMonth(currentMonth.getMonth()+1);renderCalendar();};
+
+
+// -------- Email 提醒設定 --------
+
+$('notificationBtn').onclick=async()=>{
+  if(notificationLoading) return;
+
+  notificationLoading=true;
+  $('notificationBtn').disabled=true;
+  $('notificationSaveBtn').disabled=true;
+  setStatus('notificationStatus','');
+
+  $('notificationBody').innerHTML=`
+    <div class="family-loading">
+      <div class="spinner"></div>
+      <h3 style="margin-bottom:6px">正在載入提醒設定…</h3>
+      <div class="small">正在讀取你的個人與群組提醒偏好。</div>
+    </div>`;
+
+  if(!$('notificationDialog').open) $('notificationDialog').showModal();
+
+  try {
+    const r=await api('getNotificationSettings',{},30000);
+    notificationSettings=r.settings;
+    renderNotificationSettings();
+    $('notificationSaveBtn').disabled=false;
+  } catch(e) {
+    $('notificationBody').innerHTML=`
+      <div class="family-loading">
+        <h3>提醒設定載入失敗</h3>
+        <div class="small">${escapeHtml(e.message)}</div>
+      </div>`;
+    setStatus('notificationStatus',e.message,'err');
+  } finally {
+    notificationLoading=false;
+    $('notificationBtn').disabled=false;
+  }
+};
+
+$('notificationCloseBtn').onclick=()=>$('notificationDialog').close();
+enableBackdropClose($('notificationDialog'));
+
+function renderNotificationSettings() {
+  const s=notificationSettings || {emailEnabled:false,sendHour:8,groups:[]};
+  const hours=Array.from({length:24},(_,h)=>
+    `<option value="${h}" ${Number(s.sendHour)===h?'selected':''}>${String(h).padStart(2,'0')}:00</option>`
+  ).join('');
+
+  const groups=(s.groups||[]).map(g=>`
+    <div class="notify-group" data-notify-family="${g.familyId}">
+      <div class="notify-group-head">
+        <b>${escapeHtml(g.familyName)}</b>
+        <label class="notify-inline" style="margin:0">
+          <input type="checkbox" class="notify-group-enabled" ${g.enabled?'checked':''}>
+          啟用
+        </label>
+      </div>
+      <div class="notify-grid">
+        <div>
+          <label>預設提前幾天提醒</label>
+          <input class="notify-group-days" type="number" min="0" max="365" value="${Number(g.defaultDaysBefore ?? 3)}">
+        </div>
+        <div class="small" style="align-self:end;padding-bottom:11px">
+          食品選「使用群組預設」時，就會使用這個天數。
+        </div>
+      </div>
+    </div>`).join('');
+
+  $('notificationBody').innerHTML=`
+    <label class="notify-inline">
+      <input id="notifyEmailEnabled" type="checkbox" ${s.emailEnabled?'checked':''}>
+      <b>開啟 Email 到期提醒</b>
+    </label>
+
+    <label for="notifySendHour">每天寄送時間</label>
+    <select id="notifySendHour">${hours}</select>
+    <div class="small" style="margin-top:6px">
+      系統每小時檢查一次，因此時間以整點為單位；Apps Script 實際執行可能在該小時內稍有延遲。
+    </div>
+
+    <div class="sectionline"></div>
+    <h3>各群組提醒</h3>
+    ${groups || '<div class="small">目前沒有群組。</div>'}
+  `;
+}
+
+$('notificationSaveBtn').onclick=async()=>{
+  if(!notificationSettings) return;
+  const btn=$('notificationSaveBtn');
+
+  try {
+    setBusy(btn,true,'儲存中…','儲存提醒設定');
+
+    const groups=[...document.querySelectorAll('[data-notify-family]')].map(row=>({
+      familyId:row.dataset.notifyFamily,
+      enabled:row.querySelector('.notify-group-enabled').checked,
+      defaultDaysBefore:Math.max(0,Math.min(365,Number(row.querySelector('.notify-group-days').value||0)))
+    }));
+
+    const r=await api('saveNotificationSettings',{
+      emailEnabled:$('notifyEmailEnabled').checked ? 'true' : 'false',
+      sendHour:String(Number($('notifySendHour').value||0)),
+      groups:JSON.stringify(groups)
+    },30000);
+
+    notificationSettings=r.settings;
+    renderNotificationSettings();
+    setStatus('notificationStatus','提醒設定已儲存。','ok');
+  } catch(e) {
+    setStatus('notificationStatus',e.message,'err');
+  } finally {
+    setBusy(btn,false,'儲存中…','儲存提醒設定');
+  }
+};
+
+// -------- 新增 / 加入群組 --------
+
+$('groupAddBtn').onclick=()=>{
+  setStatus('groupDialogStatus','');
+  $('modalNewGroupName').value='';
+  $('modalJoinCode').value='';
+  if(!$('groupDialog').open) $('groupDialog').showModal();
+};
+
+$('groupDialogCloseBtn').onclick=()=>$('groupDialog').close();
+
+$('modalCreateGroupBtn').onclick=async()=>{
+  const btn=$('modalCreateGroupBtn');
+  try {
+    const groupName=$('modalNewGroupName').value.trim();
+    if(!groupName) throw new Error('請輸入群組名稱。');
+
+    setBusy(btn,true,'建立中…','建立群組');
+    setStatus('groupDialogStatus','正在建立群組，請不要重複送出…');
+
+    const r=await safeGroupRequest(
+      'createFamily',
+      {familyName:groupName},
+      'groupDialogStatus'
+    );
+
+    if(!me.families.some(x=>x.familyId===r.family.familyId)) {
+      me.families=[...(me.families||[]),r.family];
+    }
+    currentFamilyId=r.family.familyId;
+
+    $('groupDialog').close();
+    renderFamilies(me.families);
+  } catch(e) {
+    setStatus('groupDialogStatus',e.message,'err');
+  } finally {
+    setBusy(btn,false,'建立中…','建立群組');
+  }
+};
+
+$('modalJoinGroupBtn').onclick=async()=>{
+  const btn=$('modalJoinGroupBtn');
+  try {
+    const inviteCode=$('modalJoinCode').value.trim();
+    if(!inviteCode) throw new Error('請輸入群組邀請碼。');
+
+    setBusy(btn,true,'加入中…','加入群組');
+    setStatus('groupDialogStatus','正在加入群組，請不要重複送出…');
+
+    const r=await safeGroupRequest(
+      'joinFamily',
+      {inviteCode},
+      'groupDialogStatus'
+    );
+
+    if(!me.families.some(x=>x.familyId===r.family.familyId)) {
+      me.families=[...(me.families||[]),r.family];
+    }
+    currentFamilyId=r.family.familyId;
+
+    $('groupDialog').close();
+    renderFamilies(me.families);
+  } catch(e) {
+    setStatus('groupDialogStatus',e.message,'err');
+  } finally {
+    setBusy(btn,false,'加入中…','加入群組');
+  }
+};
+
+
+// -------- 家庭管理 --------
+
+$('familyManageBtn').onclick=async()=>{
+  if(familyManageLoading) return;
+
+  familyManageLoading=true;
+  $('familyManageBtn').disabled=true;
+
+  // 先立即開啟視窗，避免使用者以為沒有按到。
+  $('familyManageBody').innerHTML=`
+    <div class="family-loading">
+      <div class="spinner"></div>
+      <h3 style="margin-bottom:6px">正在同步群組資料…</h3>
+      <div class="small">正在讀取群組成員與權限，請稍候。</div>
+    </div>
+  `;
+  setStatus('familyManageStatus','');
+
+  if(!$('familyDialog').open) {
+    $('familyDialog').showModal();
+  }
+
+  try {
+    // 若食品還有待同步資料，先送出，避免切換設定時留下未完成變更。
+    if(pendingChanges.length) {
+      $('familyManageBody').innerHTML=`
+        <div class="family-loading">
+          <div class="spinner"></div>
+          <h3 style="margin-bottom:6px">正在同步未儲存資料…</h3>
+          <div class="small">完成後會自動載入群組設定。</div>
+        </div>
+      `;
+
+      await syncPending();
+
+      if(pendingChanges.length) {
+        throw new Error('食品資料尚未同步完成，請稍後再試。');
+      }
+
+      $('familyManageBody').innerHTML=`
+        <div class="family-loading">
+          <div class="spinner"></div>
+          <h3 style="margin-bottom:6px">正在同步群組資料…</h3>
+          <div class="small">正在讀取群組成員與權限，請稍候。</div>
+        </div>
+      `;
+    }
+
+    const r=await api('familyDetails',{familyId:currentFamilyId});
+    currentFamilyDetails=r.family;
+    renderFamilyManagement();
+    setStatus('familyManageStatus','');
+  } catch(e) {
+    $('familyManageBody').innerHTML=`
+      <div class="family-loading">
+        <h3 style="margin-bottom:8px">群組資料載入失敗</h3>
+        <div class="small">${escapeHtml(e.message)}</div>
+        <button id="retryFamilyManageBtn" class="ghost" type="button" style="margin-top:16px">
+          重新嘗試
+        </button>
+      </div>
+    `;
+
+    setTimeout(()=>{
+      const retry=$('retryFamilyManageBtn');
+      if(retry) {
+        retry.onclick=()=>{
+          $('familyDialog').close();
+          $('familyManageBtn').click();
+        };
+      }
+    },0);
+  } finally {
+    familyManageLoading=false;
+    $('familyManageBtn').disabled=false;
+  }
+};
+
+$('familyCloseBtn').onclick=()=>$('familyDialog').close();
+
+// 點擊 dialog 外圍的半透明背景即可關閉。
+// 只套用「新增 / 加入群組」與「群組設定」兩個 Pop-up。
+function enableBackdropClose(dialog) {
+  dialog.addEventListener('click', e => {
+    const rect=dialog.getBoundingClientRect();
+    const inside=
+      e.clientX >= rect.left &&
+      e.clientX <= rect.right &&
+      e.clientY >= rect.top &&
+      e.clientY <= rect.bottom;
+
+    if(!inside) dialog.close();
+  });
+}
+
+enableBackdropClose($('groupDialog'));
+enableBackdropClose($('familyDialog'));
+
+function renderFamilyManagement() {
+  const f=currentFamilyDetails;
+  if(!f) return;
+
+  const isOwner=f.myRole==='owner';
+
+  $('familyManageBody').innerHTML=`
+    <label>群組名稱</label>
+    <div class="toolbar">
+      <input id="manageFamilyName" value="${escapeHtml(f.familyName)}" ${isOwner?'':'disabled'}>
+      ${isOwner?'<button id="renameFamilyBtn" type="button">修改名稱</button>':''}
+    </div>
+
+    <label>邀請碼</label>
+    <div class="code">${escapeHtml(f.inviteCode||'僅 Owner 可查看')}</div>
+    ${isOwner?'<button id="regenInviteBtn" class="ghost" type="button" style="margin-top:8px">重新產生邀請碼</button>':''}
+
+    <div class="sectionline"></div>
+
+    <h3>群組成員</h3>
+    <div id="membersBox">
+      ${f.members.map(m=>memberHtml(m,isOwner,f.ownerUserId)).join('')}
+    </div>
+
+    <div class="sectionline"></div>
+
+    <div class="danger-zone">
+      <h3>家庭操作</h3>
+      ${f.myRole!=='owner'
+        ? '<button id="leaveFamilyBtn" class="warn" type="button">離開群組</button>'
+        : '<div class="small">Owner 必須先轉移所有權或刪除家庭；目前版本不允許唯一 Owner 直接離開。</div>'
+      }
+      ${isOwner?'<button id="deleteFamilyBtn" class="danger" type="button" style="margin-top:10px">刪除整個群組</button>':''}
+    </div>
+  `;
+
+  if(isOwner) {
+    $('renameFamilyBtn').onclick=renameFamily;
+    $('regenInviteBtn').onclick=regenerateInvite;
+    $('deleteFamilyBtn').onclick=deleteFamily;
+
+    document.querySelectorAll('[data-role-select]').forEach(sel=>{
+      sel.onchange=()=>changeMemberRole(sel.dataset.userId,sel.value);
+    });
+
+    document.querySelectorAll('[data-remove-member]').forEach(btn=>{
+      btn.onclick=()=>removeMember(btn.dataset.userId);
+    });
+  } else {
+    $('leaveFamilyBtn').onclick=leaveFamily;
+  }
+}
+
+function memberHtml(m,isOwner,ownerUserId) {
+  const isSelf=m.userId===me.userId;
+  const canManage=isOwner && m.userId!==ownerUserId;
+
+  return `
+    <div class="member">
+      <div class="who">
+        <b>${escapeHtml(m.displayName)}${isSelf?'（你）':''}</b>
+        <div class="email">${escapeHtml(m.email)}</div>
+      </div>
+
+      ${canManage
+        ? `<select data-role-select data-user-id="${m.userId}">
+             <option value="member" ${m.role==='member'?'selected':''}>Member</option>
+             <option value="viewer" ${m.role==='viewer'?'selected':''}>Viewer</option>
+           </select>`
+        : `<div>${escapeHtml(m.role)}</div>`
+      }
+
+      ${canManage
+        ? `<button class="danger" data-remove-member data-user-id="${m.userId}" type="button">移除</button>`
+        : '<div></div>'
+      }
+    </div>
+  `;
+}
+
+async function renameFamily() {
+  try {
+    const familyName=$('manageFamilyName').value.trim();
+    const r=await api('renameFamily',{familyId:currentFamilyId,familyName});
+    currentFamilyDetails.familyName=r.familyName;
+    const f=me.families.find(x=>x.familyId===currentFamilyId);
+    if(f) f.familyName=r.familyName;
+    renderFamilies(me.families);
+    setStatus('familyManageStatus','群組名稱已更新。','ok');
+  } catch(e) {
+    setStatus('familyManageStatus',e.message,'err');
+  }
+}
+
+async function regenerateInvite() {
+  if(!confirm('舊邀請碼會立刻失效，確定重新產生？')) return;
+  try {
+    const r=await api('regenerateInviteCode',{familyId:currentFamilyId});
+    currentFamilyDetails.inviteCode=r.inviteCode;
+    const f=me.families.find(x=>x.familyId===currentFamilyId);
+    if(f) f.inviteCode=r.inviteCode;
+    renderFamilyManagement();
+    setStatus('familyManageStatus','已產生新的邀請碼。','ok');
+  } catch(e) {
+    setStatus('familyManageStatus',e.message,'err');
+  }
+}
+
+async function changeMemberRole(userId,role) {
+  try {
+    await api('setMemberRole',{familyId:currentFamilyId,targetUserId:userId,role});
+    const m=currentFamilyDetails.members.find(x=>x.userId===userId);
+    if(m) m.role=role;
+    setStatus('familyManageStatus','成員角色已更新。','ok');
+  } catch(e) {
+    setStatus('familyManageStatus',e.message,'err');
+    await refreshFamilyDetails();
+  }
+}
+
+async function removeMember(userId) {
+  if(!confirm('確定把這位成員移出家庭？')) return;
+  try {
+    await api('removeMember',{familyId:currentFamilyId,targetUserId:userId});
+    currentFamilyDetails.members=currentFamilyDetails.members.filter(x=>x.userId!==userId);
+    renderFamilyManagement();
+    setStatus('familyManageStatus','成員已移除。','ok');
+  } catch(e) {
+    setStatus('familyManageStatus',e.message,'err');
+  }
+}
+
+async function leaveFamily() {
+  if(!confirm('確定離開這個群組？')) return;
+  try {
+    await api('leaveFamily',{familyId:currentFamilyId});
+    $('familyDialog').close();
+    me.families=me.families.filter(x=>x.familyId!==currentFamilyId);
+    currentFamilyId='';
+    renderFamilies(me.families);
+  } catch(e) {
+    setStatus('familyManageStatus',e.message,'err');
+  }
+}
+
+async function deleteFamily() {
+  if(!confirm('這會刪除這個群組的所有食品與成員關係，確定刪除？')) return;
+  const typed=prompt('請輸入 DELETE 確認刪除：');
+  if(typed!=='DELETE') return;
+
+  try {
+    await api('deleteFamily',{familyId:currentFamilyId,confirm:'DELETE'},30000);
+    $('familyDialog').close();
+    me.families=me.families.filter(x=>x.familyId!==currentFamilyId);
+    currentFamilyId='';
+    renderFamilies(me.families);
+  } catch(e) {
+    setStatus('familyManageStatus',e.message,'err');
+  }
+}
+
+async function refreshFamilyDetails() {
+  const r=await api('familyDetails',{familyId:currentFamilyId});
+  currentFamilyDetails=r.family;
+  renderFamilyManagement();
+}
+
+
+// -------- OCR 掃描食品日期 --------
+
+let ocrImage = null;
+let ocrCrop = null;
+let ocrDragging = false;
+let ocrDragStart = null;
+let ocrCandidates = [];
+
+$('scanExpiryBtn').onclick = () => {
+  resetOcrDialog();
+  if (!$('ocrDialog').open) $('ocrDialog').showModal();
+};
+
+$('ocrCloseBtn').onclick = () => $('ocrDialog').close();
+
+enableBackdropClose($('ocrDialog'));
+
+$('ocrFile').onchange = async e => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+
+  try {
+    setStatus('ocrStatus', '正在載入圖片…');
+    const img = await fileToImage(file);
+    ocrImage = img;
+    ocrCrop = null;
+
+    drawOcrCanvas();
+    show('ocrPreviewWrap', true);
+    show('ocrHelp', true);
+    show('ocrResetCropBtn', false);
+    $('ocrStartBtn').disabled = false;
+    setStatus('ocrStatus', '圖片已載入。可直接辨識，或拖曳框選日期區域。', 'ok');
+  } catch (e2) {
+    setStatus('ocrStatus', '圖片載入失敗：' + e2.message, 'err');
+  }
+};
+
+function fileToImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('無法讀取圖片'));
+    };
+
+    img.src = url;
+  });
+}
+
+function resetOcrDialog() {
+  $('ocrFile').value = '';
+  ocrImage = null;
+  ocrCrop = null;
+  ocrCandidates = [];
+
+  show('ocrPreviewWrap', false);
+  show('ocrHelp', false);
+  show('ocrResetCropBtn', false);
+  show('ocrResults', false);
+  show('ocrProgressBox', false);
+
+  $('ocrProgressBar').style.width = '0%';
+  $('ocrCandidateList').innerHTML = '';
+  $('ocrRawText').textContent = '';
+  $('ocrStartBtn').disabled = true;
+  show('ocrAdvancedBtn', false);
+  $('ocrApplyBtn').disabled = true;
+  setStatus('ocrStatus', '');
+}
+
+function canvasPoint(evt) {
+  const canvas = $('ocrCanvas');
+  const rect = canvas.getBoundingClientRect();
+  const src = evt.touches ? evt.touches[0] : evt;
+
+  return {
+    x: (src.clientX - rect.left) * canvas.width / rect.width,
+    y: (src.clientY - rect.top) * canvas.height / rect.height
+  };
+}
+
+function drawOcrCanvas(tempCrop = null) {
+  if (!ocrImage) return;
+
+  const canvas = $('ocrCanvas');
+  const ctx = canvas.getContext('2d');
+
+  const maxW = 1000;
+  const scale = Math.min(1, maxW / ocrImage.naturalWidth);
+
+  canvas.width = Math.round(ocrImage.naturalWidth * scale);
+  canvas.height = Math.round(ocrImage.naturalHeight * scale);
+
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(ocrImage,0,0,canvas.width,canvas.height);
+
+  const c = tempCrop || ocrCrop;
+
+  if (c) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.38)';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    ctx.clearRect(c.x,c.y,c.w,c.h);
+    ctx.drawImage(
+      ocrImage,
+      c.x / scale,
+      c.y / scale,
+      c.w / scale,
+      c.h / scale,
+      c.x,c.y,c.w,c.h
+    );
+
+    ctx.strokeStyle = '#00c2ff';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(c.x,c.y,c.w,c.h);
+    ctx.restore();
+  }
+}
+
+const ocrCanvas = $('ocrCanvas');
+
+ocrCanvas.addEventListener('pointerdown', e => {
+  if (!ocrImage) return;
+  ocrDragging = true;
+  ocrDragStart = canvasPoint(e);
+  ocrCanvas.setPointerCapture?.(e.pointerId);
+});
+
+ocrCanvas.addEventListener('pointermove', e => {
+  if (!ocrDragging || !ocrDragStart) return;
+  const p = canvasPoint(e);
+
+  const crop = {
+    x: Math.min(ocrDragStart.x,p.x),
+    y: Math.min(ocrDragStart.y,p.y),
+    w: Math.abs(p.x-ocrDragStart.x),
+    h: Math.abs(p.y-ocrDragStart.y)
+  };
+
+  if (crop.w > 5 && crop.h > 5) drawOcrCanvas(crop);
+});
+
+ocrCanvas.addEventListener('pointerup', e => {
+  if (!ocrDragging || !ocrDragStart) return;
+
+  const p = canvasPoint(e);
+  ocrDragging = false;
+
+  const crop = {
+    x: Math.min(ocrDragStart.x,p.x),
+    y: Math.min(ocrDragStart.y,p.y),
+    w: Math.abs(p.x-ocrDragStart.x),
+    h: Math.abs(p.y-ocrDragStart.y)
+  };
+
+  ocrDragStart = null;
+
+  if (crop.w >= 20 && crop.h >= 20) {
+    ocrCrop = crop;
+    show('ocrResetCropBtn', true);
+  } else {
+    ocrCrop = null;
+    show('ocrResetCropBtn', false);
+  }
+
+  drawOcrCanvas();
+});
+
+$('ocrResetCropBtn').onclick = () => {
+  ocrCrop = null;
+  show('ocrResetCropBtn', false);
+  drawOcrCanvas();
+};
+
+function makeOcrSourceCanvas() {
+  const display = $('ocrCanvas');
+
+  if (!ocrCrop) {
+    const out = document.createElement('canvas');
+    out.width = display.width;
+    out.height = display.height;
+    out.getContext('2d').drawImage(display,0,0);
+    return out;
+  }
+
+  const out = document.createElement('canvas');
+  out.width = Math.max(1, Math.round(ocrCrop.w));
+  out.height = Math.max(1, Math.round(ocrCrop.h));
+
+  out.getContext('2d').drawImage(
+    display,
+    ocrCrop.x,ocrCrop.y,ocrCrop.w,ocrCrop.h,
+    0,0,out.width,out.height
+  );
+
+  return out;
+}
+
+function preprocessCanvas(source, mode) {
+  const out = document.createElement('canvas');
+  out.width = source.width;
+  out.height = source.height;
+
+  const ctx = out.getContext('2d');
+  ctx.drawImage(source,0,0);
+
+  if (mode === 'original') return out;
+
+  const img = ctx.getImageData(0,0,out.width,out.height);
+  const d = img.data;
+
+  for (let i=0;i<d.length;i+=4) {
+    const gray = Math.round(d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114);
+    let v = gray;
+
+    if (mode === 'contrast') {
+      v = gray > 145 ? 255 : 0;
+    } else if (mode === 'invert') {
+      v = 255 - gray;
+    } else {
+      v = gray;
+    }
+
+    d[i]=d[i+1]=d[i+2]=v;
+  }
+
+  ctx.putImageData(img,0,0);
+  return out;
+}
+
+$('ocrStartBtn').onclick = async () => {
+  if (!ocrImage) return;
+
+  const btn = $('ocrStartBtn');
+
+  try {
+    setBusy(btn,true,'辨識中…','快速辨識');
+    show('ocrAdvancedBtn', false);
+    $('ocrApplyBtn').disabled = true;
+    show('ocrResults', false);
+    show('ocrProgressBox', true);
+    $('ocrProgressBar').style.width = '5%';
+
+    const base = makeOcrSourceCanvas();
+
+    setStatus('ocrStatus','正在快速辨識日期…');
+
+    // 快速模式只跑一次英文 OCR。
+    // 日期大多是阿拉伯數字，這比三語言 × 四版本快非常多。
+    const result = await Tesseract.recognize(
+      base,
+      'eng',
+      {
+        logger: m => {
+          if (m.status === 'recognizing text' && typeof m.progress === 'number') {
+            $('ocrProgressBar').style.width =
+              Math.max(5, m.progress * 100).toFixed(0) + '%';
+          }
+        }
+      }
+    );
+
+    $('ocrProgressBar').style.width='100%';
+
+    const combined=result.data.text || '';
+    ocrCandidates=extractDateCandidates(combined);
+
+    $('ocrRawText').textContent=combined.trim() || '(沒有辨識到文字)';
+    renderOcrCandidates();
+    show('ocrResults',true);
+
+    if(ocrCandidates.length) {
+      setStatus(
+        'ocrStatus',
+        `快速辨識完成，找到 ${ocrCandidates.length} 個日期候選。`,
+        'ok'
+      );
+    } else {
+      setStatus(
+        'ocrStatus',
+        '快速辨識沒有找到日期。可以再試「加強辨識（中 / 日文）」，或直接手動輸入。',
+        'err'
+      );
+      show('ocrAdvancedBtn', true);
+    }
+  } catch(e) {
+    setStatus(
+      'ocrStatus',
+      '快速辨識失敗：'+e.message+'。可以改用加強辨識或手動輸入日期。',
+      'err'
+    );
+    show('ocrAdvancedBtn', true);
+  } finally {
+    setBusy(btn,false,'辨識中…','快速辨識');
+  }
+};
+
+$('ocrAdvancedBtn').onclick = async () => {
+  if (!ocrImage) return;
+
+  const btn=$('ocrAdvancedBtn');
+
+  try {
+    setBusy(btn,true,'加強辨識中…','加強辨識（中 / 日文）');
+    $('ocrApplyBtn').disabled=true;
+    show('ocrProgressBox',true);
+    $('ocrProgressBar').style.width='5%';
+    setStatus('ocrStatus','正在載入繁中 / 日文辨識模型，第一次可能需要較久…');
+
+    const base=makeOcrSourceCanvas();
+    const enhanced=preprocessCanvas(base,'contrast');
+
+    // 加強模式只跑一個高對比版本，不再連跑四次。
+    const result=await Tesseract.recognize(
+      enhanced,
+      'eng+chi_tra+jpn',
+      {
+        logger:m=>{
+          if(m.status==='recognizing text' && typeof m.progress==='number') {
+            $('ocrProgressBar').style.width =
+              Math.max(5,m.progress*100).toFixed(0)+'%';
+          }
+        }
+      }
+    );
+
+    $('ocrProgressBar').style.width='100%';
+
+    const text2=result.data.text || '';
+    const existingRaw=$('ocrRawText').textContent || '';
+    const combined=(existingRaw && !existingRaw.startsWith('('))
+      ? existingRaw + '\n--- 加強辨識 ---\n' + text2
+      : text2;
+
+    ocrCandidates=extractDateCandidates(combined);
+    $('ocrRawText').textContent=combined.trim() || '(沒有辨識到文字)';
+    renderOcrCandidates();
+    show('ocrResults',true);
+
+    if(ocrCandidates.length) {
+      setStatus(
+        'ocrStatus',
+        `加強辨識完成，找到 ${ocrCandidates.length} 個日期候選。`,
+        'ok'
+      );
+    } else {
+      setStatus(
+        'ocrStatus',
+        '仍然沒有找到日期。可以重新框選較小範圍再試，或直接手動輸入。',
+        'err'
+      );
+    }
+  } catch(e) {
+    setStatus(
+      'ocrStatus',
+      '加強辨識失敗：'+e.message+'。仍可直接手動輸入日期。',
+      'err'
+    );
+  } finally {
+    setBusy(btn,false,'加強辨識中…','加強辨識（中 / 日文）');
+  }
+};
+
+function extractDateCandidates(text) {
+  const candidates = [];
+  const seen = new Set();
+
+  function add(y,m,d,source,score=0) {
+    y = Number(y);
+    m = Number(m);
+    d = Number(d);
+
+    if (y < 100) {
+      y = y <= 69 ? 2000 + y : 1900 + y;
+    }
+
+    // 民國年
+    if (y >= 1 && y <= 200) {
+      y += 1911;
+    }
+
+    if (y < 2000 || y > 2100) return;
+    if (m < 1 || m > 12) return;
+    if (d < 1 || d > 31) return;
+
+    const dt = new Date(y,m-1,d);
+    if (
+      dt.getFullYear() !== y ||
+      dt.getMonth() !== m-1 ||
+      dt.getDate() !== d
+    ) return;
+
+    const iso = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+
+    if (seen.has(iso)) return;
+    seen.add(iso);
+
+    candidates.push({iso,source,score});
+  }
+
+  const keywordRe = /(有效日期|有效期限|賞味期限|消費期限|保存期限|到期日|EXP|EXPIRY|BEST\s*BEFORE|USE\s*BY)/ig;
+
+  const datePatterns = [
+    /(\d{2,4})\s*[年\/\-.]\s*(\d{1,2})\s*[月\/\-.]\s*(\d{1,2})\s*日?/g,
+    /(?:民國|ROC)?\s*(\d{2,3})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{1,2})/g,
+    /(\d{2})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{1,2})/g,
+    /\b(20\d{2})(\d{2})(\d{2})\b/g,
+    /\b(\d{2,4})\s+(\d{1,2})\s+(\d{1,2})\b/g
+  ];
+
+  const lines = text.split(/\r?\n/);
+
+  for (const line of lines) {
+    const hasKeyword = keywordRe.test(line);
+    keywordRe.lastIndex = 0;
+
+    for (const re of datePatterns) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(line))) {
+        add(m[1],m[2],m[3],line.trim(),hasKeyword ? 10 : 0);
+      }
+    }
+  }
+
+  candidates.sort((a,b) => b.score - a.score || a.iso.localeCompare(b.iso));
+  return candidates;
+}
+
+function renderOcrCandidates() {
+  const box = $('ocrCandidateList');
+
+  if (!ocrCandidates.length) {
+    box.innerHTML = '<div class="small">沒有找到日期候選。</div>';
+    $('ocrApplyBtn').disabled = true;
+    return;
+  }
+
+  box.innerHTML = ocrCandidates.map((c,i)=>`
+    <label class="ocr-candidate">
+      <input type="radio" name="ocrCandidate" value="${c.iso}" ${i===0?'checked':''}>
+      <div>
+        <b>${c.iso}</b>
+        <div class="small">${escapeHtml(c.source || '')}</div>
+      </div>
+    </label>
+  `).join('');
+
+  $('ocrApplyBtn').disabled = false;
+}
+
+$('ocrApplyBtn').onclick = () => {
+  const selected = document.querySelector('input[name="ocrCandidate"]:checked');
+
+  if (!selected) {
+    setStatus('ocrStatus','請先選擇一個日期。','err');
+    return;
+  }
+
+  $('expiry').value = selected.value;
+  $('ocrDialog').close();
+  setStatus('foodStatus',`已套用掃描日期：${selected.value}`,'ok');
+};
+
+
+
+// -------- 記住上一次登入 Email --------
+
+function restoreLastLoginEmail() {
+  const lastEmail = localStorage.getItem(LAST_EMAIL_KEY) || '';
+
+  if (lastEmail && !$('loginEmail').value) {
+    $('loginEmail').value = lastEmail;
+  }
+}
+
+restoreLastLoginEmail();
+
+restoreSession();
+</script>
+</body>
+</html>
