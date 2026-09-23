@@ -738,6 +738,13 @@ html[data-theme="dark"] .settings-section-title{color:#9eabb9}
   display:block;
   object-fit:cover;
 }
+.food-thumb img.food-thumb-img{
+  opacity:0;
+  transition:opacity .12s ease;
+}
+.food-thumb img.food-thumb-img.loaded{
+  opacity:1;
+}
 .food-thumb.loading{
   position:relative;
 }
@@ -2390,9 +2397,21 @@ async function loadFoodImageElement(img) {
 
     if(!img.isConnected) return;
 
+    img.onload=()=>{
+      img.classList.add('loaded');
+      wrap?.classList.remove('loading');
+    };
+
+    img.onerror=()=>{
+      wrap?.classList.remove('loading');
+
+      if(wrap) {
+        wrap.innerHTML=
+          '<div class="food-thumb-broken">照片載入失敗</div>';
+      }
+    };
+
     img.src=dataUrl;
-    img.classList.remove('hidden');
-    wrap?.classList.remove('loading');
   } catch(err) {
     if(!img.isConnected) return;
 
@@ -3031,7 +3050,7 @@ function renderList() {
           ${f.imageId
             ? `<div class="food-thumb">
                  <img
-                   class="hidden"
+                   class="food-thumb-img"
                    data-food-image="${escapeHtml(f.imageId)}"
                    alt="${escapeHtml(f.name)}"
                  >
