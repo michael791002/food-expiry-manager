@@ -202,6 +202,8 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
   transition:width .2s;
 }
 
+
+
 </style>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
@@ -2015,6 +2017,32 @@ $('ocrCameraBtn').onclick = () => $('ocrCameraFile').click();
 $('ocrGalleryBtn').onclick = () => $('ocrGalleryFile').click();
 $('ocrDesktopFileBtn').onclick = () => $('ocrGalleryFile').click();
 
+
+function clearOcrRecognitionState({
+  clearStatus = true
+} = {}) {
+  ocrCandidates = [];
+
+  show('ocrResults', false);
+  show('ocrProgressBox', false);
+  show('ocrAdvancedBtn', false);
+
+  $('ocrProgressBar').style.width = '0%';
+  $('ocrCandidateList').innerHTML = '';
+  $('ocrRawText').textContent = '';
+  $('ocrApplyBtn').disabled = true;
+
+  const debugGrid = $('ocrDebugGrid');
+  const debugDetails = $('ocrDebugDetails');
+
+  if (debugGrid) debugGrid.innerHTML = '';
+  if (debugDetails) debugDetails.open = false;
+
+  if (clearStatus) {
+    setStatus('ocrStatus','');
+  }
+}
+
 async function loadOcrFile(file) {
   if (!file) return;
 
@@ -2022,6 +2050,11 @@ async function loadOcrFile(file) {
     setStatus('ocrStatus', '請選擇圖片檔案。', 'err');
     return;
   }
+
+  // 一換新圖片，就先清除上一張的所有辨識資訊。
+  clearOcrRecognitionState();
+  ocrCrop = null;
+  show('ocrResetCropBtn', false);
 
   try {
     // 某些手機瀏覽器從相機 / 相簿返回頁面時，
@@ -2053,7 +2086,13 @@ async function loadOcrFile(file) {
 
 async function handleOcrFileSelection(e) {
   const file = e.target.files && e.target.files[0];
-  await loadOcrFile(file);
+
+  try {
+    await loadOcrFile(file);
+  } finally {
+    // 允許之後再次選擇相同檔案。
+    e.target.value = '';
+  }
 }
 
 $('ocrCameraFile').onchange = handleOcrFileSelection;
@@ -3549,7 +3588,7 @@ function buildOcrCandidateUi(votes, ocrRuns) {
   if (ambiguous) {
     setStatus(
       'ocrStatus',
-      '日期的日/月順序有歧義，請確認正確候選後再套用。',
+      '日期格式有歧義，已列出所有合法候選，請確認後再套用。',
       'err'
     );
   } else if (!highConfidence && votes.length > 1) {
@@ -3950,20 +3989,28 @@ function extractDateCandidates(text, options = {}) {
   const MONTH_TOKEN =
     '(?:JAN(?:UARY)?|FEB(?:RUARY)?|MAR(?:CH)?|APR(?:IL)?|MAY|JUN(?:E)?|JUL(?:Y)?|AUG(?:UST)?|SEP(?:T(?:EMBER)?)?|OCT(?:OBER)?|NOV(?:EMBER)?|DEC(?:EMBER)?)';
 
+  // 「保存期限 / Shelf Life」刻意不放在有效日期關鍵字內，
+  // 因為「保存期限 12 個月」只是期間，不是日期。
   const expiryKeywordRe =
-    /(有效日期|有效期限|賞味期限|消費期限|保存期限|到期日|EXP(?:IRY|IRES|\.?)?|BEST\s*(?:IF\s*)?(?:BEFORE|USED\s+BY)|USE\s*BY|SELL\s*BY|BBE\b)/i;
+    /(有效日期|有效期限|賞味期限|消費期限|到期日|EXP(?:IRY|IRES|IRATION)?(?:\s*DATE)?|EXP\s*DATE|USE\s*(?:BY|BEFORE)|BEST\s*(?:IF\s*)?(?:BEFORE|USED\s+BY)|BEST\s+BY|SELL\s+BY|\bBB\b|\bBBD\b|\bBBE\b)/i;
 
   const manufactureKeywordRe =
-    /(製造日期|製造日|生產日期|生産日|MFG\b|MFD\b|MANUFACTURED|PROD(?:UCTION)?\s*DATE)/i;
+    /(製造日期|製造日|生產日期|生産日|\bMFG\b|\bMFD\b|\bMD\b|MFG\s*DATE|MANUFACTURED|\bPROD\b|PROD\s*DATE|PRODUCTION\s*DATE|\bP\.?\s*D\.?\b)/i;
+
+  const lotBatchKeywordRe =
+    /(批號|\bLOT(?:\s*(?:NO|NO\.|NUMBER))?\b|\bBATCH(?:\s*(?:NO|NO\.|NUMBER))?\b)/i;
 
   const endOfMonthRe =
-    /(BEST\s+BEFORE\s+END|BBE\b|END\s+OF\s+(?:MONTH|[A-Z]{3,9})|有效期限)/i;
+    /(BEST\s+BEFORE\s+END|END\s+OF\s+(?:MONTH|[A-Z]{3,9})|\bBBE\b)/i;
 
   const dmyHintRe =
-    /(DD\s*MM\s*YYYY|DD[\/\-.]MM[\/\-.]YYYY|DD\s*MMM\s*YYYY|日\s*[\/\-.]?\s*月\s*[\/\-.]?\s*年)/i;
+    /(DD\s*MM\s*(?:YYYY|YY)|DD[\/\-.]MM[\/\-.](?:YYYY|YY)|DD\s*MMM\s*(?:YYYY|YY)|日\s*[\/\-.]?\s*月\s*[\/\-.]?\s*年)/i;
 
   const mdyHintRe =
-    /(MM\s*DD\s*YYYY|MM[\/\-.]DD[\/\-.]YYYY|MMM\s*DD\s*YYYY)/i;
+    /(MM\s*DD\s*(?:YYYY|YY)|MM[\/\-.]DD[\/\-.](?:YYYY|YY)|MMM\s*DD\s*(?:YYYY|YY))/i;
+
+  const ymdHintRe =
+    /((?:YYYY|YY)\s*MM\s*DD|(?:YYYY|YY)[\/\-.]MM[\/\-.]DD)/i;
 
   function monthNumber(token) {
     return MONTHS[String(token || '')
@@ -3980,7 +4027,7 @@ function extractDateCandidates(text, options = {}) {
       return y <= 69 ? 2000 + y : 1900 + y;
     }
 
-    // 民國年 100~199
+    // 民國年
     if (y >= 100 && y <= 199) {
       return y + 1911;
     }
@@ -4009,12 +4056,21 @@ function extractDateCandidates(text, options = {}) {
     ].join(' ');
   }
 
+  function compactNearbyContext(line, matchIndex, matchText) {
+    const left = Math.max(0, matchIndex - 18);
+    const right = Math.min(
+      line.length,
+      matchIndex + String(matchText || '').length + 10
+    );
+
+    return line.slice(left,right);
+  }
+
   function contextScore(context) {
     let score = 0;
 
     if (expiryKeywordRe.test(context)) score += 9;
 
-    // 製造日期附近不直接丟掉，但強烈降權。
     if (
       manufactureKeywordRe.test(context) &&
       !expiryKeywordRe.test(context)
@@ -4022,7 +4078,21 @@ function extractDateCandidates(text, options = {}) {
       score -= 12;
     }
 
+    if (
+      lotBatchKeywordRe.test(context) &&
+      !expiryKeywordRe.test(context)
+    ) {
+      score -= 18;
+    }
+
     return score;
+  }
+
+  function shouldSkipCompact(context) {
+    return (
+      lotBatchKeywordRe.test(context) &&
+      !expiryKeywordRe.test(context)
+    );
   }
 
   function addYMD(
@@ -4032,7 +4102,6 @@ function extractDateCandidates(text, options = {}) {
     {
       note='',
       format='',
-      skipIfManufactureOnly=false,
       context=''
     }={}
   ) {
@@ -4040,19 +4109,11 @@ function extractDateCandidates(text, options = {}) {
     m = Number(m);
     d = Number(d);
 
-    if (y === null) return;
-    if (y < 2000 || y > 2100) return;
-    if (m < 1 || m > 12) return;
-    if (d < 1 || d > 31) return;
-    if (!validDate(y,m,d)) return;
-
-    if (
-      skipIfManufactureOnly &&
-      manufactureKeywordRe.test(context) &&
-      !expiryKeywordRe.test(context)
-    ) {
-      return;
-    }
+    if (y === null) return false;
+    if (y < 2000 || y > 2100) return false;
+    if (m < 1 || m > 12) return false;
+    if (d < 1 || d > 31) return false;
+    if (!validDate(y,m,d)) return false;
 
     const iso =
       `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
@@ -4079,7 +4140,7 @@ function extractDateCandidates(text, options = {}) {
         existing.format = existing.formats.join(', ');
       }
 
-      return;
+      return true;
     }
 
     candidates.push({
@@ -4091,6 +4152,101 @@ function extractDateCandidates(text, options = {}) {
       format,
       formats:format ? [format] : []
     });
+
+    return true;
+  }
+
+  function addMonthPrecision(
+    y,m,
+    source,
+    score,
+    {
+      note='',
+      format='',
+      context='',
+      endOfMonth=false
+    }={}
+  ) {
+    y = normalizeYear(y);
+    m = Number(m);
+
+    if (y === null || y < 2000 || y > 2100) return false;
+    if (m < 1 || m > 12) return false;
+
+    const day = endOfMonth
+      ? lastDayOfMonth(y,m)
+      : 1;
+
+    const baseNote = endOfMonth
+      ? '原標示只有年 / 月，但包裝明確標示月底期限，已換算為該月最後一天'
+      : '原標示只有年 / 月，已用該月 1 日作為候選';
+
+    return addYMD(
+      y,m,day,
+      source,
+      score,
+      {
+        note:note
+          ? `${baseNote}；${note}`
+          : baseNote,
+        format,
+        context
+      }
+    );
+  }
+
+  function addAmbiguousPossibilities(possibilities, {
+    source,
+    baseScore,
+    context,
+    ambiguityNote
+  }) {
+    const valid = [];
+
+    for (const p of possibilities) {
+      const y = normalizeYear(p.y);
+      const m = Number(p.m);
+      const d = Number(p.d);
+
+      if (
+        y !== null &&
+        y >= 2000 && y <= 2100 &&
+        m >= 1 && m <= 12 &&
+        d >= 1 && d <= 31 &&
+        validDate(y,m,d)
+      ) {
+        valid.push({...p,y,m,d});
+      }
+    }
+
+    // 去除同日期但不同格式的重複。
+    const uniqueIso = new Set(
+      valid.map(p =>
+        `${p.y}-${String(p.m).padStart(2,'0')}-${String(p.d).padStart(2,'0')}`
+      )
+    );
+
+    for (const p of valid) {
+      let extra = Number(p.scoreBoost || 0);
+      let note = p.note || '';
+
+      if (uniqueIso.size > 1) {
+        note = note
+          ? `${ambiguityNote}；${note}`
+          : ambiguityNote;
+      }
+
+      addYMD(
+        p.y,p.m,p.d,
+        source,
+        baseScore + extra,
+        {
+          format:p.format,
+          note,
+          context
+        }
+      );
+    }
   }
 
   function addNumericDmyMdy(a,b,y,source,baseScore,context) {
@@ -4098,75 +4254,225 @@ function extractDateCandidates(text, options = {}) {
     b=Number(b);
     y=Number(y);
 
-    const hintedDmy = dmyHintRe.test(context) || dmyHintRe.test(text);
-    const hintedMdy = mdyHintRe.test(context) || mdyHintRe.test(text);
+    const hintedDmy =
+      dmyHintRe.test(context) || dmyHintRe.test(text);
+    const hintedMdy =
+      mdyHintRe.test(context) || mdyHintRe.test(text);
 
-    if (a > 12 && b <= 12) {
-      addYMD(
-        y,b,a,source,
-        baseScore + 8,
-        {format:'DD/MM/YYYY',context}
-      );
-      return;
-    }
-
-    if (b > 12 && a <= 12) {
-      addYMD(
-        y,a,b,source,
-        baseScore + 8,
-        {format:'MM/DD/YYYY',context}
-      );
-      return;
-    }
-
-    if (a <= 12 && b <= 12) {
-      if (hintedDmy && !hintedMdy) {
-        addYMD(
-          y,b,a,source,
-          baseScore + 9,
-          {
-            format:'DD/MM/YYYY',
-            note:'依包裝上的 DD/MM/YYYY 格式提示判定',
-            context
-          }
-        );
-        return;
+    const possibilities = [
+      {
+        y,m:b,d:a,
+        format:'DD/MM/YYYY',
+        scoreBoost:hintedDmy ? 5 : 0
+      },
+      {
+        y,m:a,d:b,
+        format:'MM/DD/YYYY',
+        scoreBoost:hintedMdy ? 5 : 0
       }
+    ];
 
-      if (hintedMdy && !hintedDmy) {
-        addYMD(
-          y,a,b,source,
-          baseScore + 9,
-          {
-            format:'MM/DD/YYYY',
-            note:'依包裝上的 MM/DD/YYYY 格式提示判定',
-            context
-          }
-        );
-        return;
-      }
-
-      const ambiguityNote =
-        '日/月順序格式有歧義，請確認是 DD/MM 還是 MM/DD';
-
-      addYMD(
-        y,b,a,source,
+    addAmbiguousPossibilities(
+      possibilities,
+      {
+        source,
         baseScore,
+        context,
+        ambiguityNote:
+          '日期格式有歧義，請確認是 DD/MM/YYYY 還是 MM/DD/YYYY'
+      }
+    );
+  }
+
+  function addThreePartShort(a,b,c,source,baseScore,context) {
+    if (strictOcrYear) return;
+
+    const hintedDmy =
+      dmyHintRe.test(context) || dmyHintRe.test(text);
+    const hintedMdy =
+      mdyHintRe.test(context) || mdyHintRe.test(text);
+    const hintedYmd =
+      ymdHintRe.test(context) || ymdHintRe.test(text);
+
+    addAmbiguousPossibilities(
+      [
         {
-          format:'DD/MM/YYYY',
-          note:ambiguityNote,
-          context
+          y:a,m:b,d:c,
+          format:'YY/MM/DD',
+          scoreBoost:hintedYmd ? 5 : 0
+        },
+        {
+          y:c,m:b,d:a,
+          format:'DD/MM/YY',
+          scoreBoost:hintedDmy ? 5 : 0
+        },
+        {
+          y:c,m:a,d:b,
+          format:'MM/DD/YY',
+          scoreBoost:hintedMdy ? 5 : 0
         }
-      );
-
-      // 若兩種解釋剛好是同一天，例如 05/05，不會重複。
-      addYMD(
-        y,a,b,source,
+      ],
+      {
+        source,
         baseScore,
+        context,
+        ambiguityNote:
+          '三段兩位數日期格式有歧義，已列出所有合法解釋'
+      }
+    );
+  }
+
+  function addCompact8(token,source,baseScore,context) {
+    if (!/^\d{8}$/.test(token)) return;
+
+    const possibilities = [];
+
+    const y1 = Number(token.slice(0,4));
+    if (y1 >= 2000 && y1 <= 2100) {
+      possibilities.push({
+        y:y1,
+        m:Number(token.slice(4,6)),
+        d:Number(token.slice(6,8)),
+        format:'YYYYMMDD',
+        scoreBoost:ymdHintRe.test(context) ? 4 : 0
+      });
+    }
+
+    const y2 = Number(token.slice(4,8));
+    if (y2 >= 2000 && y2 <= 2100) {
+      possibilities.push({
+        y:y2,
+        m:Number(token.slice(2,4)),
+        d:Number(token.slice(0,2)),
+        format:'DDMMYYYY',
+        scoreBoost:dmyHintRe.test(context) ? 4 : 0
+      });
+
+      possibilities.push({
+        y:y2,
+        m:Number(token.slice(0,2)),
+        d:Number(token.slice(2,4)),
+        format:'MMDDYYYY',
+        scoreBoost:mdyHintRe.test(context) ? 4 : 0
+      });
+    }
+
+    addAmbiguousPossibilities(
+      possibilities,
+      {
+        source,
+        baseScore,
+        context,
+        ambiguityNote:
+          '8 碼日期格式有歧義，已列出所有合法解釋'
+      }
+    );
+  }
+
+  function addCompact6(token,source,baseScore,context) {
+    if (strictOcrYear) return;
+    if (!/^\d{6}$/.test(token)) return;
+
+    const possibilities = [
+      {
+        y:Number(token.slice(0,2)),
+        m:Number(token.slice(2,4)),
+        d:Number(token.slice(4,6)),
+        format:'YYMMDD',
+        scoreBoost:ymdHintRe.test(context) ? 4 : 0
+      },
+      {
+        y:Number(token.slice(4,6)),
+        m:Number(token.slice(2,4)),
+        d:Number(token.slice(0,2)),
+        format:'DDMMYY',
+        scoreBoost:dmyHintRe.test(context) ? 4 : 0
+      },
+      {
+        y:Number(token.slice(4,6)),
+        m:Number(token.slice(0,2)),
+        d:Number(token.slice(2,4)),
+        format:'MMDDYY',
+        scoreBoost:mdyHintRe.test(context) ? 4 : 0
+      }
+    ];
+
+    // 6 碼也可能是只有年/月：YYYYMM 或 MMYYYY。
+    const monthCandidates = [];
+
+    const yFirst = Number(token.slice(0,4));
+    const mLast = Number(token.slice(4,6));
+    if (
+      yFirst >= 2000 && yFirst <= 2100 &&
+      mLast >= 1 && mLast <= 12
+    ) {
+      monthCandidates.push({
+        y:yFirst,
+        m:mLast,
+        format:'YYYYMM'
+      });
+    }
+
+    const mFirst = Number(token.slice(0,2));
+    const yLast = Number(token.slice(2,6));
+    if (
+      yLast >= 2000 && yLast <= 2100 &&
+      mFirst >= 1 && mFirst <= 12
+    ) {
+      monthCandidates.push({
+        y:yLast,
+        m:mFirst,
+        format:'MMYYYY'
+      });
+    }
+
+    // 先確認完整日期有幾種合法解釋。
+    const validDateIsos = new Set();
+    for (const p of possibilities) {
+      const y = normalizeYear(p.y);
+      const m = Number(p.m);
+      const d = Number(p.d);
+
+      if (
+        y !== null &&
+        y >= 2000 && y <= 2100 &&
+        m >= 1 && m <= 12 &&
+        d >= 1 && d <= 31 &&
+        validDate(y,m,d)
+      ) {
+        validDateIsos.add(
+          `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+        );
+      }
+    }
+
+    const totalInterpretations =
+      validDateIsos.size + monthCandidates.length;
+
+    addAmbiguousPossibilities(
+      possibilities,
+      {
+        source,
+        baseScore,
+        context,
+        ambiguityNote:
+          '6 碼日期格式有歧義，已列出所有合法解釋'
+      }
+    );
+
+    for (const p of monthCandidates) {
+      addMonthPrecision(
+        p.y,p.m,
+        source,
+        baseScore - 1,
         {
-          format:'MM/DD/YYYY',
-          note:ambiguityNote,
-          context
+          format:p.format,
+          note:
+            totalInterpretations > 1
+              ? '6 碼內容也可能代表完整日期，請與其他候選一起確認'
+              : '',
+          context,
+          endOfMonth:endOfMonthRe.test(context)
         }
       );
     }
@@ -4178,8 +4484,17 @@ function extractDateCandidates(text, options = {}) {
 
   for (let i=0;i<lines.length;i++) {
     const line = lines[i];
+    const previousLine = lines[i-1] || '';
     const context = localContext(lines,i);
-    const cScore = contextScore(context);
+
+    // 同一行的標籤優先，避免：
+    // MFG 日期下一行剛好是 EXP 日期時，兩行互相污染權重。
+    const ownScore = contextScore(line);
+    const cScore =
+      ownScore !== 0
+        ? ownScore
+        : contextScore(previousLine);
+
     let m;
 
     // 1) YYYY.MM.DD / YYYY-MM-DD / YYYY/MM/DD / YYYY年MM月DD日
@@ -4223,10 +4538,7 @@ function extractDateCandidates(text, options = {}) {
       }
     }
 
-    // 3) 兩個數字 + 四位年份：
-    //    31/07/2018 → DMY
-    //    08/28/2026 → MDY
-    //    03/04/2026 → 兩個候選
+    // 3) DD/MM/YYYY 或 MM/DD/YYYY；兩者都合法時全列。
     {
       const re =
         /\b(\d{1,2})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(20\d{2})\b/g;
@@ -4241,13 +4553,29 @@ function extractDateCandidates(text, options = {}) {
       }
     }
 
-    // 4) DD MMM YYYY / DD-MMM-YY
-    //    05 JUN 2016
+    // 4) 三段兩位數：
+    //    YY/MM/DD、DD/MM/YY、MM/DD/YY 都嘗試；
+    //    有多種合法日期時全部列出。
+    {
+      const re =
+        /\b(\d{2})\s*[\/\-.]\s*(\d{2})\s*[\/\-.]\s*(\d{2})\b/g;
+
+      while ((m = re.exec(line))) {
+        addThreePartShort(
+          m[1],m[2],m[3],
+          line.trim(),
+          4 + cScore,
+          context
+        );
+      }
+    }
+
+    // 5) DD MMM YYYY / DD-MMM-YY
     {
       const re = new RegExp(
         '\\b(\\d{1,2})\\s*[-./ ]\\s*(' +
         MONTH_TOKEN +
-        ')\\.?\\s*[-./ ,]?\\s*(\\d{2}|20\\d{2})\\b',
+        ')\\.?\\s*[-./ ,]?\\s*(20\\d{2}|\\d{2})\\b(?!\\s*:\\s*\\d)',
         'gi'
       );
 
@@ -4264,12 +4592,13 @@ function extractDateCandidates(text, options = {}) {
       }
     }
 
-    // 5) MMM DD YYYY / MMM DD YY
-    //    AUG 28 26
+    // 6) MMM DD YYYY / MMM DD YY
+    //    日與年份之間必須真的有分隔，避免把 "SEP 2026"
+    //    拆成 "SEP 20 26"。
     {
       const re = new RegExp(
         '\\b(' + MONTH_TOKEN +
-        ')\\.?\\s+([0-3]?\\d)(?:st|nd|rd|th)?\\s*[,./ -]*\\s*(\\d{2}|20\\d{2})\\b',
+        ')\\.?\\s+([0-3]?\\d)(?:st|nd|rd|th)?(?:\\s*[,./-]\\s*|\\s+)(20\\d{2}|\\d{2})\\b',
         'gi'
       );
 
@@ -4286,7 +4615,7 @@ function extractDateCandidates(text, options = {}) {
       }
     }
 
-    // 6) YYYY MMM DD
+    // 7) YYYY MMM DD
     {
       const re = new RegExp(
         '\\b(20\\d{2})\\s*[-./ ]\\s*(' +
@@ -4308,160 +4637,247 @@ function extractDateCandidates(text, options = {}) {
       }
     }
 
-    // 7) Best before end DEC 2023 / EXP DEC 2023
-    //    月份型有效期一律轉月底，但一定要有到期相關文字脈絡。
+    // 8) 英文月份 + 年份：SEP 2026 / SEP 26
+    //    預設用該月 1 日；只有明確 END 才用月底。
     {
-      const re = new RegExp(
+      // 四位年份
+      const re4 = new RegExp(
         '\\b(' + MONTH_TOKEN + ')\\.?\\s+(20\\d{2})\\b',
         'gi'
       );
 
-      while ((m = re.exec(line))) {
-        if (!expiryKeywordRe.test(context)) continue;
+      while ((m = re4.exec(line))) {
+        // "30 SEP 2026" 是完整日月年，不再額外產生 SEP 2026。
+        const before = line.slice(0,m.index);
 
-        const mo = monthNumber(m[1]);
-        const y = Number(m[2]);
-        const d = lastDayOfMonth(y,mo);
+        if (/\d{1,2}\s*[-./ ]\s*$/i.test(before)) {
+          continue;
+        }
 
-        addYMD(
-          y,mo,d,
+        addMonthPrecision(
+          m[2],
+          monthNumber(m[1]),
           line.trim(),
-          10 + cScore,
+          6 + cScore,
           {
             format:'MMM YYYY',
-            note:
-              endOfMonthRe.test(context)
-                ? '包裝標示月份型期限／Best before end，已換算為該月最後一天'
-                : '包裝只有到期月份，暫以該月最後一天作為候選，請確認',
-            context
+            context,
+            endOfMonth:endOfMonthRe.test(context)
           }
         );
       }
-    }
 
-    // 8) EXP 12/2026 / Best Before 12-2026
-    //    只有到期關鍵字附近才將 MM/YYYY 視為月份型期限。
-    {
-      const re =
-        /\b(0?[1-9]|1[0-2])\s*[\/\-.]\s*(20\d{2})\b/g;
+      // 兩位年份
+      const re2 = new RegExp(
+        '\\b(' + MONTH_TOKEN + ')\\.?\\s+(\\d{2})\\b',
+        'gi'
+      );
 
-      while ((m = re.exec(line))) {
-        if (!expiryKeywordRe.test(context)) continue;
-
-        const mo = Number(m[1]);
-        const y = Number(m[2]);
-
-        addYMD(
-          y,mo,lastDayOfMonth(y,mo),
-          line.trim(),
-          9 + cScore,
-          {
-            format:'MM/YYYY',
-            note:'包裝只有到期月份，已換算為該月最後一天，請確認',
-            context
-          }
+      while ((m = re2.exec(line))) {
+        const before = line.slice(0,m.index);
+        const after = line.slice(
+          m.index + m[0].length
         );
-      }
-    }
 
-    // 9) YYYY/MM 月份型期限（同樣必須有到期關鍵字）
-    {
-      const re =
-        /\b(20\d{2})\s*[\/\-.]\s*(0?[1-9]|1[0-2])\b/g;
+        // "30 SEP 26" 是完整日期。
+        if (/\d{1,2}\s*[-./ ]\s*$/i.test(before)) {
+          continue;
+        }
 
-      while ((m = re.exec(line))) {
-        if (!expiryKeywordRe.test(context)) continue;
+        // "SEP 30 2026" 中的 SEP 30 不是 SEP 2030。
+        if (/^\s*[,./-]?\s*\d/.test(after)) {
+          continue;
+        }
 
-        const y = Number(m[1]);
-        const mo = Number(m[2]);
+        // "MAR 15:31" 的 15 是時間，不是 2015。
+        if (/^\s*:\s*\d/.test(after)) {
+          continue;
+        }
 
-        addYMD(
-          y,mo,lastDayOfMonth(y,mo),
-          line.trim(),
-          9 + cScore,
-          {
-            format:'YYYY/MM',
-            note:'包裝只有到期月份，已換算為該月最後一天，請確認',
-            context
-          }
-        );
-      }
-    }
-
-    // 10) 8 碼 YYYYMMDD
-    {
-      const re = /\b(20\d{2})(\d{2})(\d{2})\b/g;
-
-      while ((m = re.exec(line))) {
-        addYMD(
-          m[1],m[2],m[3],
+        addMonthPrecision(
+          m[2],
+          monthNumber(m[1]),
           line.trim(),
           5 + cScore,
           {
-            format:'YYYYMMDD',
-            context
+            format:'MMM YY',
+            note:'月份 + 兩位年份格式，請確認兩位數確實代表年份',
+            context,
+            endOfMonth:endOfMonthRe.test(context)
           }
         );
       }
     }
 
-    // 11) DDMMYYYY / MMDDYYYY，只在有明確格式提示時啟用。
-    if (dmyHintRe.test(context) || dmyHintRe.test(text)) {
-      const re = /\b(\d{2})(\d{2})(20\d{2})\b/g;
+    // 9) YYYY MMM：2026 SEP
+    {
+      const re = new RegExp(
+        '\\b(20\\d{2})\\s+(' + MONTH_TOKEN + ')\\.?\\b',
+        'gi'
+      );
 
       while ((m = re.exec(line))) {
-        addYMD(
-          m[3],m[2],m[1],
+        const after = line.slice(
+          m.index + m[0].length
+        );
+
+        if (/^\s*[-./ ]\s*\d/.test(after)) {
+          continue;
+        }
+
+        addMonthPrecision(
+          m[1],
+          monthNumber(m[2]),
           line.trim(),
-          9 + cScore,
+          6 + cScore,
           {
-            format:'DDMMYYYY',
-            note:'依 DDMMYYYY 格式提示判定',
-            context
+            format:'YYYY MMM',
+            context,
+            endOfMonth:endOfMonthRe.test(context)
           }
         );
       }
     }
 
-    if (mdyHintRe.test(context) || mdyHintRe.test(text)) {
-      const re = /\b(\d{2})(\d{2})(20\d{2})\b/g;
-
-      while ((m = re.exec(line))) {
-        addYMD(
-          m[3],m[1],m[2],
-          line.trim(),
-          9 + cScore,
-          {
-            format:'MMDDYYYY',
-            note:'依 MMDDYYYY 格式提示判定',
-            context
-          }
-        );
-      }
-    }
-
-    // 12) 兩位年份數字格式仍保留，但只在一般 parser 使用。
-    //     OCR strict mode 不把缺掉的年份自動合理化。
-    if (!strictOcrYear) {
+    // 10) YYYY/MM、YYYY-MM、YYYY.MM
+    //     避免從完整 YYYY/MM/DD 裡再切出年月。
+    {
       const re =
-        /\b(\d{2})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{1,2})\b/g;
+        /(?:^|[^0-9\/\-.])(20\d{2})\s*[\/\-.]\s*(0?[1-9]|1[0-2])(?!\s*[\/\-.]\s*\d)/g;
 
       while ((m = re.exec(line))) {
-        // 這類沿用 YY/MM/DD，分數刻意較低。
-        addYMD(
-          m[1],m[2],m[3],
+        addMonthPrecision(
+          m[1],m[2],
           line.trim(),
-          2 + cScore,
+          6 + cScore,
           {
-            format:'YY/MM/DD',
-            note:'兩位年份格式，請確認年份',
-            context
+            format:'YYYY/MM',
+            context,
+            endOfMonth:endOfMonthRe.test(context)
           }
         );
       }
     }
 
-    // 13) OCR 把分隔符吃成空白：YYYY MM DD
+    // 11) MM/YYYY、MM-YYYY、MM.YYYY
+    //     避免抓到 DD/MM/YYYY 中間的 MM/YYYY。
+    {
+      const re =
+        /(?:^|[^0-9\/\-.])(0?[1-9]|1[0-2])\s*[\/\-.]\s*(20\d{2})(?!\s*[\/\-.]\s*\d)/g;
+
+      while ((m = re.exec(line))) {
+        addMonthPrecision(
+          m[2],m[1],
+          line.trim(),
+          6 + cScore,
+          {
+            format:'MM/YYYY',
+            context,
+            endOfMonth:endOfMonthRe.test(context)
+          }
+        );
+      }
+    }
+
+    // 12) MM/YY（例如 09/26）：
+    //     單獨年月格式，使用該月 1 日。
+    {
+      const re =
+        /(?:^|[^0-9\/\-.])(0?[1-9]|1[0-2])\s*[\/\-.]\s*(\d{2})(?!\d)(?!\s*[\/\-.]\s*\d)/g;
+
+      while ((m = re.exec(line))) {
+        addMonthPrecision(
+          m[2],m[1],
+          line.trim(),
+          4 + cScore,
+          {
+            format:'MM/YY',
+            note:'兩位年份格式，請確認年份',
+            context,
+            endOfMonth:endOfMonthRe.test(context)
+          }
+        );
+      }
+    }
+
+    // 13) 民國連續 7 碼：1150930
+    {
+      const re = /(?:^|[^0-9])(\d{7})(?!\d)/g;
+
+      while ((m = re.exec(line))) {
+        const token = m[1];
+        const roc = Number(token.slice(0,3));
+        const near = compactNearbyContext(
+          line,
+          m.index,
+          m[0]
+        );
+
+        if (shouldSkipCompact(near)) continue;
+
+        if (roc >= 100 && roc <= 199) {
+          addYMD(
+            roc,
+            Number(token.slice(3,5)),
+            Number(token.slice(5,7)),
+            line.trim(),
+            6 + contextScore(near),
+            {
+              format:'ROC YYYMMDD',
+              note:'民國連續日期已轉換為西元',
+              context:near
+            }
+          );
+        }
+      }
+    }
+
+    // 14) 8 碼：YYYYMMDD / DDMMYYYY / MMDDYYYY
+    {
+      const re = /(?:^|[^0-9])(\d{8})(?!\d)/g;
+
+      while ((m = re.exec(line))) {
+        const near = compactNearbyContext(
+          line,
+          m.index,
+          m[0]
+        );
+
+        if (shouldSkipCompact(near)) continue;
+
+        addCompact8(
+          m[1],
+          line.trim(),
+          5 + contextScore(near),
+          near
+        );
+      }
+    }
+
+    // 15) 6 碼：
+    //     YYMMDD / DDMMYY / MMDDYY / YYYYMM / MMYYYY
+    {
+      const re = /(?:^|[^0-9])(\d{6})(?!\d)/g;
+
+      while ((m = re.exec(line))) {
+        const near = compactNearbyContext(
+          line,
+          m.index,
+          m[0]
+        );
+
+        if (shouldSkipCompact(near)) continue;
+
+        addCompact6(
+          m[1],
+          line.trim(),
+          4 + contextScore(near),
+          near
+        );
+      }
+    }
+
+    // 16) OCR 把 YYYY/MM/DD 分隔符吃成空白：YYYY MM DD
     {
       const re =
         /\b(20\d{2})\s+(\d{1,2})\s+(\d{1,2})\b/g;
