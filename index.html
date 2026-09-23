@@ -4,6 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>食品過期管理 v4.4</title>
+<script>
+(() => {
+  try {
+    const saved = localStorage.getItem('food-expiry-theme-v1');
+    document.documentElement.dataset.theme =
+      saved === 'dark' ? 'dark' : 'light';
+  } catch (_) {
+    document.documentElement.dataset.theme = 'light';
+  }
+})();
+</script>
 <style>
 :root {
   font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
@@ -204,6 +215,460 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
 
 
 
+
+/* v4.4 食品清單 / 到期日曆操作優化 */
+.list-tools{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  margin-bottom:8px;
+}
+.list-tools input{
+  margin:0;
+  min-width:0;
+}
+.list-tools button{
+  width:auto;
+  white-space:nowrap;
+}
+.filter-panel{
+  border:1px solid #e3e8ee;
+  background:#f8fafc;
+  border-radius:12px;
+  padding:10px;
+  margin-bottom:8px;
+}
+.filter-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+.filter-grid select{margin:0}
+.filter-footer{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:8px;
+  margin-top:8px;
+}
+.filter-footer button{
+  width:auto;
+  padding:7px 10px;
+  font-size:12px;
+}
+.list-result-count{
+  font-size:12px;
+  color:#667085;
+  min-height:20px;
+  margin-bottom:6px;
+}
+
+.food.compact-food{
+  display:block;
+  padding:10px 12px;
+  margin-bottom:8px;
+}
+.food-main{min-width:0}
+.food-head{
+  display:flex;
+  gap:10px;
+  align-items:flex-start;
+  justify-content:space-between;
+}
+.food-head .food-title{
+  min-width:0;
+  font-size:15px;
+  line-height:1.35;
+  overflow-wrap:anywhere;
+}
+.food-head .actions{
+  flex:0 0 auto;
+}
+.food-summary{
+  display:flex;
+  gap:7px 12px;
+  flex-wrap:wrap;
+  margin-top:3px;
+  font-size:12px;
+  color:#667085;
+  line-height:1.45;
+}
+.food-note{
+  margin-top:3px;
+  font-size:12px;
+  color:#667085;
+  line-height:1.45;
+  overflow-wrap:anywhere;
+}
+.food-badges{
+  display:flex;
+  gap:5px;
+  flex-wrap:wrap;
+  align-items:center;
+  margin-top:5px;
+}
+.food-badges .badge{margin-top:0;padding:3px 7px}
+.compact-food .actions button{
+  padding:6px 8px;
+  font-size:11px;
+}
+
+.calendar-mode-row{
+  display:flex;
+  justify-content:flex-end;
+  gap:6px;
+  margin-bottom:8px;
+}
+.calendar-mode-row button{
+  width:auto;
+  padding:7px 12px;
+  font-size:12px;
+}
+.calendar-head{
+  gap:10px;
+}
+.calendar-head strong{
+  text-align:center;
+  flex:1;
+}
+.cal.week-mode .day{
+  min-height:145px;
+}
+.day{
+  position:relative;
+  cursor:pointer;
+  transition:border-color .12s, box-shadow .12s, background .12s;
+}
+.day:hover{border-color:#a8cbd6}
+.day.muted{
+  background:#fafafa;
+  color:#aeb7c2;
+}
+.day.muted .num{color:#98a2b3}
+.day.muted .event{opacity:.62}
+.day.today{
+  box-shadow:inset 0 0 0 2px #1686a7;
+}
+.day.selected{
+  border-color:#1686a7;
+  background:#f1fafc;
+}
+.day.today.selected{
+  box-shadow:inset 0 0 0 2px #1686a7,0 0 0 2px rgba(22,134,167,.12);
+}
+.num-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:4px;
+}
+.today-label{
+  font-size:9px;
+  line-height:1;
+  padding:3px 4px;
+  border-radius:999px;
+  color:#1686a7;
+  background:#e7f6fa;
+  font-weight:800;
+}
+.event{
+  cursor:pointer;
+}
+.event.expired{
+  background:#fdecec;
+  color:#a83232;
+}
+.event.soon{
+  background:#fff5dd;
+  color:#8b5b13;
+}
+.event.normal{
+  background:#e9f6fa;
+  color:#205c6d;
+}
+.more-events{
+  font-size:10px;
+  font-weight:800;
+  color:#667085;
+  margin-top:4px;
+  padding:2px 3px;
+}
+.calendar-detail{
+  margin-top:12px;
+  border-top:1px solid #e8edf2;
+  padding-top:12px;
+}
+.calendar-detail-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:8px;
+  margin-bottom:8px;
+}
+.calendar-detail-title{
+  font-weight:800;
+  color:#263746;
+}
+.calendar-detail-count{
+  font-size:12px;
+  color:#667085;
+}
+.calendar-detail-item{
+  border:1px solid #e6e9ee;
+  border-radius:10px;
+  padding:9px 10px;
+  margin-top:7px;
+}
+.calendar-detail-item-top{
+  display:flex;
+  justify-content:space-between;
+  gap:8px;
+  align-items:flex-start;
+}
+.calendar-detail-item-name{
+  font-weight:800;
+  font-size:14px;
+  min-width:0;
+  overflow-wrap:anywhere;
+}
+.calendar-detail-item .actions button{
+  padding:6px 8px;
+  font-size:11px;
+}
+.calendar-detail-empty{
+  color:#98a2b3;
+  font-size:13px;
+  padding:10px 2px;
+}
+
+@media(max-width:600px){
+  .filter-grid{grid-template-columns:1fr}
+  .food.compact-food{padding:9px 10px}
+  .food-head .food-title{font-size:14px}
+  .cal{gap:4px}
+  .day{min-height:82px;padding:5px}
+  .cal.week-mode .day{min-height:125px}
+  .event{font-size:10px;padding:3px 4px}
+  .today-label{display:none}
+}
+
+
+/* v4.4 設定選單 / 深色主題 */
+#note,
+#editNote{
+  resize:vertical;
+  min-height:64px;
+  max-height:160px;
+  overflow-y:auto;
+}
+
+.topbar .right{position:relative}
+.settings-wrap{position:relative;flex:0 0 auto}
+.settings-trigger{
+  width:42px!important;
+  height:42px;
+  min-width:42px;
+  padding:0!important;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:20px;
+  line-height:1;
+}
+.settings-menu{
+  position:absolute;
+  z-index:500;
+  top:calc(100% + 8px);
+  right:0;
+  width:min(310px,calc(100vw - 32px));
+  padding:12px;
+  border:1px solid #e2e8f0;
+  border-radius:14px;
+  background:#fff;
+  box-shadow:0 18px 45px rgba(15,23,42,.18);
+}
+.settings-menu-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:8px;
+}
+.settings-menu-head strong{font-size:16px}
+.settings-close{
+  width:32px!important;
+  height:32px;
+  min-width:32px;
+  padding:0!important;
+  border-radius:9px;
+}
+.settings-section{padding:8px 0}
+.settings-section + .settings-section{
+  border-top:1px solid #edf0f3;
+}
+.settings-section-title{
+  font-size:12px;
+  font-weight:800;
+  color:#667085;
+  margin-bottom:7px;
+}
+.theme-choice{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:7px;
+}
+.theme-choice button{
+  width:100%!important;
+  padding:8px 10px;
+  font-size:12px;
+}
+.settings-menu .menu-action{
+  display:block;
+  width:100%!important;
+  text-align:left;
+  margin-top:6px;
+  padding:9px 10px;
+}
+.settings-menu .menu-action:first-of-type{margin-top:0}
+.settings-menu .menu-action.secondary{text-align:center}
+
+@media(max-width:800px){
+  .topbar .right{width:100%}
+  .topbar .right .syncbar{flex:1 1 auto}
+  #familySelect{
+    flex:1 1 150px;
+    min-width:120px;
+  }
+}
+
+html[data-theme="dark"]{
+  color-scheme:dark;
+  color:#e6edf3;
+  background:#0f141b;
+}
+html[data-theme="dark"] body{
+  background:#0f141b;
+  color:#e6edf3;
+}
+html[data-theme="dark"] .card,
+html[data-theme="dark"] dialog,
+html[data-theme="dark"] .syncbar,
+html[data-theme="dark"] .settings-menu{
+  background:#18212b;
+  color:#e6edf3;
+}
+html[data-theme="dark"] .card{
+  box-shadow:0 8px 24px rgba(0,0,0,.22);
+}
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea{
+  background:#101820;
+  color:#e6edf3;
+  border-color:#3a4756;
+}
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder{color:#778697}
+html[data-theme="dark"] .sub,
+html[data-theme="dark"] .small,
+html[data-theme="dark"] .status,
+html[data-theme="dark"] label,
+html[data-theme="dark"] .meta,
+html[data-theme="dark"] .dow,
+html[data-theme="dark"] .num,
+html[data-theme="dark"] .food-summary,
+html[data-theme="dark"] .food-note,
+html[data-theme="dark"] .list-result-count,
+html[data-theme="dark"] .calendar-detail-count,
+html[data-theme="dark"] .ocr-help,
+html[data-theme="dark"] .scan-note,
+html[data-theme="dark"] .ocr-offline-status{
+  color:#9eabb9;
+}
+html[data-theme="dark"] button.ghost,
+html[data-theme="dark"] .inactive{
+  background:#24313d!important;
+  color:#c6d7df!important;
+}
+html[data-theme="dark"] button.secondary{background:#465364}
+html[data-theme="dark"] .familybox,
+html[data-theme="dark"] .filter-panel,
+html[data-theme="dark"] .ocr-dropzone,
+html[data-theme="dark"] .ocr-text,
+html[data-theme="dark"] .ocr-offline-box{
+  background:#111a23;
+  border-color:#354351;
+  color:#d7e0e8;
+}
+html[data-theme="dark"] .ocr-dropzone strong,
+html[data-theme="dark"] .ocr-offline-title{color:#b9d5de}
+html[data-theme="dark"] .food,
+html[data-theme="dark"] .calendar-detail-item,
+html[data-theme="dark"] .ocr-candidate,
+html[data-theme="dark"] .notify-group,
+html[data-theme="dark"] .ocr-debug-card{
+  background:#18212b;
+  border-color:#354351;
+  color:#e6edf3;
+}
+html[data-theme="dark"] .food.pending{background:#211f19}
+html[data-theme="dark"] .day{
+  background:#18212b;
+  border-color:#354351;
+  color:#e6edf3;
+}
+html[data-theme="dark"] .day:hover{border-color:#4e8496}
+html[data-theme="dark"] .day.muted{
+  background:#111820;
+  color:#687787;
+}
+html[data-theme="dark"] .day.muted .num{color:#687787}
+html[data-theme="dark"] .day.selected{
+  background:#102a34;
+  border-color:#2495b5;
+}
+html[data-theme="dark"] .event.normal{
+  background:#173641;
+  color:#b9dce7;
+}
+html[data-theme="dark"] .event.soon{
+  background:#41331b;
+  color:#f5cf82;
+}
+html[data-theme="dark"] .event.expired{
+  background:#402124;
+  color:#f2a4aa;
+}
+html[data-theme="dark"] .badge.ok{
+  background:#18392a;
+  color:#8fd0aa;
+}
+html[data-theme="dark"] .badge.warn{
+  background:#41331b;
+  color:#f5cf82;
+}
+html[data-theme="dark"] .badge.danger{
+  background:#402124;
+  color:#f2a4aa;
+}
+html[data-theme="dark"] .sectionline,
+html[data-theme="dark"] .settings-section + .settings-section{
+  background:#33404d;
+  border-color:#33404d;
+}
+html[data-theme="dark"] .member{border-color:#33404d}
+html[data-theme="dark"] .danger-zone{
+  background:#2b1c1e;
+  border-color:#6b3a3f;
+}
+html[data-theme="dark"] .calendar-detail{border-color:#33404d}
+html[data-theme="dark"] .calendar-detail-empty,
+html[data-theme="dark"] .empty{color:#768697}
+html[data-theme="dark"] .ocr-preview-wrap{background:#080b0f}
+html[data-theme="dark"] .ocr-debug-card canvas,
+html[data-theme="dark"] .ocr-debug-card img{background:#fff}
+html[data-theme="dark"] .settings-section-title{color:#9eabb9}
+
 </style>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
@@ -294,11 +759,53 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
         <button id="syncNowBtn" class="ghost" type="button">立即同步</button>
       </div>
 
-      <select id="familySelect"></select>
-      <button id="groupAddBtn" class="ghost" type="button">新增 / 加入群組</button>
-      <button id="familyManageBtn" class="ghost" type="button">群組設定</button>
-      <button id="notificationBtn" class="ghost" type="button">提醒設定</button>
-      <button id="logoutBtn" class="secondary" type="button">登出</button>
+      <select id="familySelect" aria-label="切換群組"></select>
+
+      <div class="settings-wrap">
+        <button
+          id="settingsBtn"
+          class="ghost settings-trigger"
+          type="button"
+          aria-label="開啟設定"
+          aria-expanded="false"
+          title="設定"
+        >⚙</button>
+
+        <div id="settingsMenu" class="settings-menu hidden">
+          <div class="settings-menu-head">
+            <strong>設定</strong>
+            <button
+              id="settingsCloseBtn"
+              class="ghost settings-close"
+              type="button"
+              aria-label="關閉設定"
+            >×</button>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">外觀</div>
+            <div class="theme-choice">
+              <button id="themeLightBtn" class="ghost" type="button">淺色</button>
+              <button id="themeDarkBtn" class="ghost" type="button">深色</button>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">群組</div>
+            <button id="groupAddBtn" class="ghost menu-action" type="button">新增 / 加入群組</button>
+            <button id="familyManageBtn" class="ghost menu-action" type="button">群組設定</button>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">提醒</div>
+            <button id="notificationBtn" class="ghost menu-action" type="button">Email 提醒設定</button>
+          </div>
+
+          <div class="settings-section">
+            <button id="logoutBtn" class="secondary menu-action" type="button">登出</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -384,15 +891,49 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
         <button id="calendarTab" class="inactive" type="button">到期日曆</button>
       </div>
 
-      <div id="listView"></div>
+      <div id="listSection">
+        <div class="list-tools">
+          <input id="foodSearch" type="search" placeholder="搜尋食品名稱…">
+          <button id="foodFilterToggle" class="ghost" type="button">篩選</button>
+        </div>
+
+        <div id="foodFilterPanel" class="filter-panel hidden">
+          <div class="filter-grid">
+            <select id="foodExpiryFilter">
+              <option value="all">全部到期狀態</option>
+              <option value="expired">已過期</option>
+              <option value="3">3 天內</option>
+              <option value="7">7 天內</option>
+              <option value="30">30 天內</option>
+            </select>
+            <select id="foodLocationFilter">
+              <option value="all">全部位置</option>
+            </select>
+          </div>
+          <div class="filter-footer">
+            <span id="foodFilterHint" class="small"></span>
+            <button id="foodFilterClear" class="ghost" type="button">清除篩選</button>
+          </div>
+        </div>
+
+        <div id="foodListCount" class="list-result-count"></div>
+        <div id="listView"></div>
+      </div>
 
       <div id="calendarView" class="hidden">
+        <div class="calendar-mode-row">
+          <button id="calendarMonthMode" class="active" type="button">月</button>
+          <button id="calendarWeekMode" class="inactive" type="button">週</button>
+        </div>
+
         <div class="calendar-head">
           <button id="prevMonth" class="ghost" type="button">←</button>
           <strong id="monthTitle"></strong>
           <button id="nextMonth" class="ghost" type="button">→</button>
         </div>
+
         <div class="cal" id="calendar"></div>
+        <div id="calendarDayDetail" class="calendar-detail hidden"></div>
       </div>
     </section>
   </div>
@@ -443,7 +984,7 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
     </div>
 
     <div id="ocrHelp" class="ocr-help hidden">
-      可直接辨識整張圖片，也可以在圖片上拖曳框選日期區域；框得越準，通常辨識越好。
+      可直接辨識整張圖片，也可以拖曳框選日期區域。框選時請保留些許邊界，避免框得過緊。
     </div>
 
     <div class="ocr-toolbar">
@@ -595,7 +1136,12 @@ let me = null;
 let foods = [];
 let currentFamilyId = '';
 let currentMonth = new Date();
-currentMonth.setDate(1);
+
+const CALENDAR_MODE_KEY = 'food-expiry-calendar-mode-v1';
+let calendarMode = localStorage.getItem(CALENDAR_MODE_KEY) === 'week'
+  ? 'week'
+  : 'month';
+let selectedCalendarDate = '';
 
 let pendingChanges = [];
 let syncTimer = null;
@@ -607,6 +1153,99 @@ let notificationSettings = null;
 let loadFailed = false;
 
 const $ = id => document.getElementById(id);
+
+const THEME_KEY = 'food-expiry-theme-v1';
+
+function currentTheme() {
+  return document.documentElement.dataset.theme === 'dark'
+    ? 'dark'
+    : 'light';
+}
+
+function refreshThemeButtons() {
+  const theme=currentTheme();
+
+  $('themeLightBtn').className=
+    theme==='light' ? 'active' : 'ghost';
+
+  $('themeDarkBtn').className=
+    theme==='dark' ? 'active' : 'ghost';
+
+  $('themeLightBtn').setAttribute(
+    'aria-pressed',
+    theme==='light' ? 'true' : 'false'
+  );
+
+  $('themeDarkBtn').setAttribute(
+    'aria-pressed',
+    theme==='dark' ? 'true' : 'false'
+  );
+}
+
+function applyTheme(theme) {
+  const next=theme==='dark' ? 'dark' : 'light';
+  document.documentElement.dataset.theme=next;
+
+  try {
+    localStorage.setItem(THEME_KEY,next);
+  } catch (_) {}
+
+  refreshThemeButtons();
+}
+
+function setSettingsMenu(open) {
+  $('settingsMenu').classList.toggle('hidden',!open);
+  $('settingsBtn').setAttribute(
+    'aria-expanded',
+    open ? 'true' : 'false'
+  );
+}
+
+$('settingsBtn').onclick=e=>{
+  e.stopPropagation();
+
+  const opening=$('settingsMenu')
+    .classList.contains('hidden');
+
+  setSettingsMenu(opening);
+
+  if(opening) refreshThemeButtons();
+};
+
+$('settingsCloseBtn').onclick=()=>{
+  setSettingsMenu(false);
+};
+
+$('themeLightBtn').onclick=()=>{
+  applyTheme('light');
+};
+
+$('themeDarkBtn').onclick=()=>{
+  applyTheme('dark');
+};
+
+document.addEventListener('click',e=>{
+  if(
+    !$('settingsMenu').classList.contains('hidden') &&
+    !e.target.closest('.settings-wrap')
+  ) {
+    setSettingsMenu(false);
+  }
+});
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape') setSettingsMenu(false);
+});
+
+['groupAddBtn','familyManageBtn','notificationBtn','logoutBtn']
+  .forEach(id=>{
+    $(id).addEventListener('click',()=>{
+      setSettingsMenu(false);
+    });
+  });
+
+refreshThemeButtons();
+
 
 async function api(action, data = {}, timeoutMs = 25000) {
   const body = new URLSearchParams({ action, ...data });
@@ -1465,80 +2104,515 @@ function badgeInfo(d) {
   return ['ok',`剩 ${d} 天`];
 }
 
+function refreshLocationFilterOptions() {
+  const select=$('foodLocationFilter');
+  if(!select) return;
+
+  const previous=select.value||'all';
+  const locations=[...new Set(
+    foods
+      .map(f=>String(f.location||'').trim())
+      .filter(Boolean)
+  )].sort((a,b)=>a.localeCompare(b,'zh-Hant'));
+
+  select.innerHTML=
+    '<option value="all">全部位置</option>'+
+    locations.map(x=>
+      `<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`
+    ).join('');
+
+  if(previous==='all'||locations.includes(previous)) {
+    select.value=previous;
+  } else {
+    select.value='all';
+  }
+}
+
+function getFilteredFoods() {
+  const query=String($('foodSearch')?.value||'')
+    .trim()
+    .toLocaleLowerCase('zh-Hant');
+
+  const expiryFilter=$('foodExpiryFilter')?.value||'all';
+  const locationFilter=$('foodLocationFilter')?.value||'all';
+
+  return [...foods]
+    .filter(f=>{
+      if(query) {
+        const name=String(f.name||'')
+          .toLocaleLowerCase('zh-Hant');
+
+        if(!name.includes(query)) return false;
+      }
+
+      if(locationFilter!=='all'&&String(f.location||'')!==locationFilter) {
+        return false;
+      }
+
+      if(expiryFilter!=='all') {
+        const d=daysLeft(f.expiry);
+
+        if(expiryFilter==='expired') {
+          if(d>=0) return false;
+        } else {
+          const limit=Number(expiryFilter);
+          if(d<0||d>limit) return false;
+        }
+      }
+
+      return true;
+    })
+    .sort((a,b)=>
+      String(a.expiry||'').localeCompare(String(b.expiry||'')) ||
+      String(a.name||'').localeCompare(String(b.name||''),'zh-Hant')
+    );
+}
+
+function updateFilterUi() {
+  const expiryFilter=$('foodExpiryFilter')?.value||'all';
+  const locationFilter=$('foodLocationFilter')?.value||'all';
+  const query=String($('foodSearch')?.value||'').trim();
+
+  let activeCount=0;
+  if(expiryFilter!=='all') activeCount++;
+  if(locationFilter!=='all') activeCount++;
+
+  $('foodFilterToggle').textContent=
+    activeCount>0
+      ? `篩選 ${activeCount}`
+      : '篩選';
+
+  const labels=[];
+
+  if(expiryFilter==='expired') labels.push('已過期');
+  if(expiryFilter==='3') labels.push('3 天內');
+  if(expiryFilter==='7') labels.push('7 天內');
+  if(expiryFilter==='30') labels.push('30 天內');
+  if(locationFilter!=='all') labels.push(locationFilter);
+
+  $('foodFilterHint').textContent=
+    labels.length
+      ? `目前：${labels.join('、')}`
+      : '';
+
+  return {query,activeCount};
+}
+
 function renderList() {
   const box=$('listView');
-  const sorted=[...foods].sort((a,b)=>a.expiry.localeCompare(b.expiry));
+
+  refreshLocationFilterOptions();
+  updateFilterUi();
+
+  const sorted=getFilteredFoods();
+  const total=foods.length;
+
+  $('foodListCount').textContent=
+    sorted.length===total
+      ? `共 ${total} 項`
+      : `顯示 ${sorted.length} / ${total} 項`;
+
+  if(!total) {
+    box.innerHTML='<div class="empty">目前沒有食品資料</div>';
+    return;
+  }
 
   if(!sorted.length) {
-    box.innerHTML='<div class="empty">目前沒有食品資料</div>';
+    box.innerHTML='<div class="empty">沒有符合目前搜尋或篩選條件的食品</div>';
     return;
   }
 
   box.innerHTML=sorted.map(f=>{
     const [c,t]=badgeInfo(daysLeft(f.expiry));
+
     return `
-      <div class="food ${f._pending?'pending':''}">
-        <div>
-          <div class="food-title">${escapeHtml(f.name)} ×${f.qty}</div>
-          <div class="meta">
-            到期：${escapeHtml(f.expiry)}<br>
-            位置：${escapeHtml(f.location)}
-            ${f.note?`<br>備註：${escapeHtml(f.note)}`:''}
-            <br>提醒：${escapeHtml(foodReminderLabel(f))}
+      <div class="food compact-food ${f._pending?'pending':''}">
+        <div class="food-main">
+          <div class="food-head">
+            <div class="food-title">
+              ${escapeHtml(f.name)} ×${f.qty}
+            </div>
+
+            <div class="actions">
+              ${canEditCurrentGroup()
+                ? `<button class="ghost" onclick="openEdit('${f.id}')">編輯</button>
+                   <button class="danger" onclick="removeFood('${f.id}')">刪除</button>`
+                : `<span class="small">唯讀</span>`
+              }
+            </div>
           </div>
-          <span class="badge ${c}">${t}</span>
-          ${f._pending?'<span class="badge warn">待同步</span>':''}
-        </div>
-        <div class="actions">
-          ${canEditCurrentGroup()
-            ? `<button class="ghost" onclick="openEdit('${f.id}')">編輯</button>
-               <button class="ghost" onclick="consume('${f.id}')">-1</button>
-               <button class="danger" onclick="removeFood('${f.id}')">刪除</button>`
-            : `<span class="small">唯讀</span>`
+
+          <div class="food-summary">
+            <span>到期：${escapeHtml(f.expiry)}</span>
+            <span>位置：${escapeHtml(f.location)}</span>
+          </div>
+
+          ${f.note
+            ? `<div class="food-note">備註：${escapeHtml(f.note)}</div>`
+            : ''
           }
+
+          <div class="food-badges">
+            <span class="badge ${c}">${t}</span>
+            ${f._pending
+              ? '<span class="badge warn">待同步</span>'
+              : ''
+            }
+          </div>
         </div>
       </div>
     `;
   }).join('');
 }
 
+function localDateIso(date) {
+  return (
+    date.getFullYear()+'-'+
+    String(date.getMonth()+1).padStart(2,'0')+'-'+
+    String(date.getDate()).padStart(2,'0')
+  );
+}
+
+function parseLocalDate(ds) {
+  const [y,m,d]=String(ds).split('-').map(Number);
+  return new Date(y,m-1,d);
+}
+
+function startOfWeek(date) {
+  const d=new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+  );
+
+  d.setDate(d.getDate()-d.getDay());
+  return d;
+}
+
+function calendarEventClass(f) {
+  const d=daysLeft(f.expiry);
+
+  if(d<0) return 'expired';
+  if(d<=3) return 'soon';
+  return 'normal';
+}
+
+function formatWeekRange(start) {
+  const end=new Date(start);
+  end.setDate(end.getDate()+6);
+
+  if(start.getFullYear()===end.getFullYear()) {
+    return (
+      `${start.getFullYear()} 年 `+
+      `${start.getMonth()+1}/${start.getDate()} ～ `+
+      `${end.getMonth()+1}/${end.getDate()}`
+    );
+  }
+
+  return (
+    `${start.getFullYear()}/${start.getMonth()+1}/${start.getDate()} ～ `+
+    `${end.getFullYear()}/${end.getMonth()+1}/${end.getDate()}`
+  );
+}
+
+function renderCalendarDayDetail() {
+  const box=$('calendarDayDetail');
+
+  if(!selectedCalendarDate) {
+    show('calendarDayDetail',false);
+    box.innerHTML='';
+    return;
+  }
+
+  const date=parseLocalDate(selectedCalendarDate);
+  const todayIso=localDateIso(new Date());
+
+  const dayNames=['日','一','二','三','四','五','六'];
+  const items=foods
+    .filter(f=>f.expiry===selectedCalendarDate)
+    .sort((a,b)=>
+      String(a.name||'').localeCompare(String(b.name||''),'zh-Hant')
+    );
+
+  const title=
+    `${date.getMonth()+1} 月 ${date.getDate()} 日（${dayNames[date.getDay()]}）`+
+    (selectedCalendarDate===todayIso?'・今天':'');
+
+  let html=`
+    <div class="calendar-detail-head">
+      <div class="calendar-detail-title">${title}</div>
+      <div class="calendar-detail-count">${items.length} 項</div>
+    </div>
+  `;
+
+  if(!items.length) {
+    html+=`
+      <div class="calendar-detail-empty">
+        這天沒有到期食品。
+      </div>
+    `;
+  } else {
+    html+=items.map(f=>{
+      const [c,t]=badgeInfo(daysLeft(f.expiry));
+
+      return `
+        <div class="calendar-detail-item">
+          <div class="calendar-detail-item-top">
+            <div class="calendar-detail-item-name">
+              ${escapeHtml(f.name)} ×${f.qty}
+            </div>
+
+            <div class="actions">
+              ${canEditCurrentGroup()
+                ? `<button class="ghost" onclick="openEdit('${f.id}')">編輯</button>`
+                : `<span class="small">唯讀</span>`
+              }
+            </div>
+          </div>
+
+          <div class="food-summary">
+            <span>位置：${escapeHtml(f.location)}</span>
+            <span class="badge ${c}" style="margin-top:0">${t}</span>
+          </div>
+
+          ${f.note
+            ? `<div class="food-note">備註：${escapeHtml(f.note)}</div>`
+            : ''
+          }
+        </div>
+      `;
+    }).join('');
+  }
+
+  box.innerHTML=html;
+  show('calendarDayDetail',true);
+}
+
+window.selectCalendarDay=ds=>{
+  selectedCalendarDate=ds;
+  renderCalendar();
+};
+
 function renderCalendar() {
-  const y=currentMonth.getFullYear(),m=currentMonth.getMonth();
-  $('monthTitle').textContent=`${y} 年 ${m+1} 月`;
+  const today=new Date();
+  const todayIso=localDateIso(today);
+  const dow=['日','一','二','三','四','五','六'];
 
-  let h=['日','一','二','三','四','五','六'].map(x=>`<div class="dow">${x}</div>`).join('');
-  const first=new Date(y,m,1);
-  const start=new Date(y,m,1-first.getDay());
+  $('calendarMonthMode').className=
+    calendarMode==='month'?'active':'inactive';
 
-  for(let i=0;i<42;i++) {
-    const d=new Date(start); d.setDate(start.getDate()+i);
-    const ds=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    const ev=foods.filter(f=>f.expiry===ds);
+  $('calendarWeekMode').className=
+    calendarMode==='week'?'active':'inactive';
+
+  let start;
+  let count;
+  let visibleMonth=-1;
+
+  if(calendarMode==='month') {
+    const y=currentMonth.getFullYear();
+    const m=currentMonth.getMonth();
+
+    $('monthTitle').textContent=`${y} 年 ${m+1} 月`;
+
+    const first=new Date(y,m,1);
+    start=new Date(y,m,1-first.getDay());
+    count=42;
+    visibleMonth=m;
+  } else {
+    start=startOfWeek(currentMonth);
+    count=7;
+    $('monthTitle').textContent=formatWeekRange(start);
+  }
+
+  const byDate=new Map();
+
+  for(const f of foods) {
+    if(!byDate.has(f.expiry)) byDate.set(f.expiry,[]);
+    byDate.get(f.expiry).push(f);
+  }
+
+  let h=dow
+    .map(x=>`<div class="dow">${x}</div>`)
+    .join('');
+
+  for(let i=0;i<count;i++) {
+    const d=new Date(start);
+    d.setDate(start.getDate()+i);
+
+    const ds=localDateIso(d);
+    const ev=(byDate.get(ds)||[])
+      .slice()
+      .sort((a,b)=>
+        String(a.name||'').localeCompare(String(b.name||''),'zh-Hant')
+      );
+
+    const classes=['day'];
+
+    if(
+      calendarMode==='month' &&
+      d.getMonth()!==visibleMonth
+    ) {
+      classes.push('muted');
+    }
+
+    if(ds===todayIso) classes.push('today');
+    if(ds===selectedCalendarDate) classes.push('selected');
+
+    const shown=ev.slice(0,2);
+    const more=Math.max(0,ev.length-shown.length);
 
     h+=`
-      <div class="day ${d.getMonth()!==m?'muted':''}">
-        <div class="num">${d.getDate()}</div>
-        ${ev.map(f=>`<div class="event">${escapeHtml(f.name)} ×${f.qty}</div>`).join('')}
+      <div
+        class="${classes.join(' ')}"
+        onclick="selectCalendarDay('${ds}')"
+        role="button"
+        tabindex="0"
+        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectCalendarDay('${ds}')}"
+      >
+        <div class="num-row">
+          <div class="num">
+            ${calendarMode==='week'
+              ? `${d.getMonth()+1}/${d.getDate()}`
+              : d.getDate()
+            }
+          </div>
+          ${ds===todayIso
+            ? '<span class="today-label">今天</span>'
+            : ''
+          }
+        </div>
+
+        ${shown.map(f=>
+          `<div class="event ${calendarEventClass(f)}">${escapeHtml(f.name)} ×${f.qty}</div>`
+        ).join('')}
+
+        ${more
+          ? `<div class="more-events">+${more} 項</div>`
+          : ''
+        }
       </div>
     `;
   }
 
+  $('calendar').classList.toggle(
+    'week-mode',
+    calendarMode==='week'
+  );
+
   $('calendar').innerHTML=h;
+  renderCalendarDayDetail();
 }
 
-function render() { renderList(); renderCalendar(); }
+function render() {
+  renderList();
+  renderCalendar();
+}
+
+$('foodSearch').addEventListener('input',renderList);
+
+$('foodFilterToggle').onclick=()=>{
+  $('foodFilterPanel').classList.toggle('hidden');
+};
+
+$('foodExpiryFilter').onchange=renderList;
+$('foodLocationFilter').onchange=renderList;
+
+$('foodFilterClear').onclick=()=>{
+  $('foodSearch').value='';
+  $('foodExpiryFilter').value='all';
+  $('foodLocationFilter').value='all';
+  renderList();
+};
+
+function setCalendarMode(mode) {
+  if(mode!=='month'&&mode!=='week') return;
+
+  if(mode==='week'&&calendarMode!=='week') {
+    if(selectedCalendarDate) {
+      currentMonth=parseLocalDate(selectedCalendarDate);
+    } else {
+      const today=new Date();
+
+      if(
+        currentMonth.getFullYear()===today.getFullYear() &&
+        currentMonth.getMonth()===today.getMonth()
+      ) {
+        currentMonth=today;
+      } else {
+        currentMonth=new Date(
+          currentMonth.getFullYear(),
+          currentMonth.getMonth(),
+          1
+        );
+      }
+    }
+  }
+
+  calendarMode=mode;
+  localStorage.setItem(CALENDAR_MODE_KEY,mode);
+  renderCalendar();
+}
+
+$('calendarMonthMode').onclick=()=>setCalendarMode('month');
+$('calendarWeekMode').onclick=()=>setCalendarMode('week');
 
 $('listTab').onclick=()=>{
-  show('listView'); show('calendarView',false);
-  $('listTab').className='active'; $('calendarTab').className='inactive';
+  show('listSection');
+  show('calendarView',false);
+
+  $('listTab').className='active';
+  $('calendarTab').className='inactive';
 };
+
 $('calendarTab').onclick=()=>{
-  show('listView',false); show('calendarView');
-  $('listTab').className='inactive'; $('calendarTab').className='active';
+  show('listSection',false);
+  show('calendarView');
+
+  $('listTab').className='inactive';
+  $('calendarTab').className='active';
+
   renderCalendar();
 };
-$('prevMonth').onclick=()=>{currentMonth.setMonth(currentMonth.getMonth()-1);renderCalendar();};
-$('nextMonth').onclick=()=>{currentMonth.setMonth(currentMonth.getMonth()+1);renderCalendar();};
+
+$('prevMonth').onclick=()=>{
+  selectedCalendarDate='';
+
+  if(calendarMode==='month') {
+    currentMonth=new Date(
+      currentMonth.getFullYear(),
+      currentMonth.getMonth()-1,
+      1
+    );
+  } else {
+    currentMonth=new Date(
+      currentMonth.getFullYear(),
+      currentMonth.getMonth(),
+      currentMonth.getDate()-7
+    );
+  }
+
+  renderCalendar();
+};
+
+$('nextMonth').onclick=()=>{
+  selectedCalendarDate='';
+
+  if(calendarMode==='month') {
+    currentMonth=new Date(
+      currentMonth.getFullYear(),
+      currentMonth.getMonth()+1,
+      1
+    );
+  } else {
+    currentMonth=new Date(
+      currentMonth.getFullYear(),
+      currentMonth.getMonth(),
+      currentMonth.getDate()+7
+    );
+  }
+
+  renderCalendar();
+};
 
 
 // -------- Email 提醒設定 --------
