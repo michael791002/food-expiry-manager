@@ -806,6 +806,151 @@ html[data-theme="dark"] .food-thumb{
   }
 }
 
+
+/* v4.4 圖片快取 / 日曆縮圖 / 圖片詳情 */
+.food-thumb{
+  cursor:pointer;
+}
+.food-thumb:focus,
+.calendar-event-thumb:focus,
+.calendar-detail-thumb:focus{
+  outline:2px solid #1686a7;
+  outline-offset:2px;
+}
+.calendar-event-row{
+  display:flex;
+  align-items:center;
+  gap:4px;
+  min-width:0;
+}
+.calendar-event-thumb{
+  width:20px;
+  height:20px;
+  flex:0 0 20px;
+  border-radius:5px;
+  overflow:hidden;
+  background:#eef3f6;
+  border:1px solid rgba(0,0,0,.06);
+  cursor:pointer;
+}
+.calendar-event-thumb img,
+.calendar-detail-thumb img{
+  width:100%;
+  height:100%;
+  display:block;
+  object-fit:cover;
+  opacity:0;
+  transition:opacity .12s ease;
+}
+.calendar-event-thumb img.loaded,
+.calendar-detail-thumb img.loaded{
+  opacity:1;
+}
+.calendar-detail-main{
+  display:flex;
+  align-items:flex-start;
+  gap:9px;
+  min-width:0;
+}
+.calendar-detail-thumb{
+  width:52px;
+  height:52px;
+  flex:0 0 52px;
+  border-radius:8px;
+  overflow:hidden;
+  background:#eef3f6;
+  border:1px solid #e0e6eb;
+  cursor:pointer;
+}
+.calendar-detail-text{
+  min-width:0;
+  flex:1;
+}
+.food-photo-modal{
+  padding:14px;
+}
+.food-photo-modal h2{
+  margin:0 0 10px;
+  font-size:18px;
+}
+.food-photo-stage{
+  width:100%;
+  min-height:220px;
+  max-height:65vh;
+  border-radius:12px;
+  overflow:hidden;
+  background:#111;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.food-photo-stage img{
+  display:block;
+  max-width:100%;
+  max-height:65vh;
+  width:auto;
+  height:auto;
+  object-fit:contain;
+}
+.food-photo-info{
+  margin-top:12px;
+  display:grid;
+  grid-template-columns:auto 1fr;
+  gap:6px 12px;
+  font-size:13px;
+}
+.food-photo-info .label{
+  color:#667085;
+  white-space:nowrap;
+}
+.food-photo-info .value{
+  color:#263746;
+  min-width:0;
+  overflow-wrap:anywhere;
+}
+.food-photo-note{
+  margin-top:10px;
+  padding:9px 10px;
+  border-radius:9px;
+  background:#f6f8fa;
+  font-size:12px;
+  color:#667085;
+  line-height:1.5;
+}
+.photo-dialog-loading{
+  color:#c8d1db;
+  font-size:13px;
+}
+html[data-theme="dark"] .calendar-event-thumb,
+html[data-theme="dark"] .calendar-detail-thumb{
+  background:#0e151c;
+  border-color:#354351;
+}
+html[data-theme="dark"] .food-photo-info .label{
+  color:#9eabb9;
+}
+html[data-theme="dark"] .food-photo-info .value{
+  color:#e6edf3;
+}
+html[data-theme="dark"] .food-photo-note{
+  background:#111a23;
+  color:#9eabb9;
+}
+@media(max-width:600px){
+  .calendar-event-thumb{
+    width:16px;
+    height:16px;
+    flex-basis:16px;
+  }
+  .food-photo-stage{
+    min-height:180px;
+    max-height:58vh;
+  }
+  .food-photo-stage img{
+    max-height:58vh;
+  }
+}
+
 </style>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
@@ -1172,6 +1317,24 @@ html[data-theme="dark"] .food-thumb{
     <div class="modal-actions">
       <button id="ocrCloseBtn" class="secondary" type="button">關閉</button>
       <button id="ocrApplyBtn" type="button" disabled>套用選取日期</button>
+    </div>
+  </div>
+</dialog>
+
+
+<dialog id="foodPhotoDialog">
+  <div class="modal food-photo-modal">
+    <h2 id="foodPhotoTitle">物品照片</h2>
+
+    <div id="foodPhotoStage" class="food-photo-stage">
+      <div class="photo-dialog-loading">正在載入照片…</div>
+    </div>
+
+    <div id="foodPhotoInfo" class="food-photo-info"></div>
+    <div id="foodPhotoNote" class="food-photo-note hidden"></div>
+
+    <div class="modal-actions">
+      <button id="foodPhotoCloseBtn" class="secondary" type="button">關閉</button>
     </div>
   </div>
 </dialog>
@@ -1816,7 +1979,9 @@ async function restoreSession() {
   } catch(e) {
     const invalid=/尚未登入|登入已過期|使用者不存在/.test(e.message);
     if(invalid) {
-      token=''; localStorage.removeItem(TOKEN_KEY);
+      token='';
+      localStorage.removeItem(TOKEN_KEY);
+      clearPersistentFoodImageCache().catch(()=>{});
       show('splash',false); show('authCard',true);
       setStatus('authStatus','登入狀態已過期，請重新登入。','err');
       return;
@@ -1851,6 +2016,9 @@ $('logoutBtn').onclick=async()=>{
   // 本機立即登出，不等待 Apps Script / Sheet。
   token='';
   localStorage.removeItem(TOKEN_KEY);
+
+  await clearPersistentFoodImageCache();
+
   me=null;
   foods=[];
   pendingChanges=[];
@@ -2209,6 +2377,11 @@ async function uploadCompressedProductPhoto(
     compressed.dataUrl
   );
 
+  writePersistentFoodImage(
+    r.imageId,
+    compressed.dataUrl
+  );
+
   return r;
 }
 
@@ -2228,6 +2401,7 @@ function discardPendingImage(
   ).catch(()=>{});
 
   foodImageDataCache.delete(imageId);
+  deletePersistentFoodImage(imageId);
 }
 
 function renderProductPhotoPreview(
@@ -2355,6 +2529,114 @@ $('newPhotoRemoveBtn').onclick=()=>{
   });
 };
 
+const FOOD_IMAGE_CACHE_NAME = 'food-expiry-product-images-v1';
+const foodImageInflight = new Map();
+
+function persistentFoodImageRequest(imageId) {
+  const base=new URL(
+    './__food_image_cache__/',
+    document.baseURI
+  );
+
+  return new Request(
+    new URL(
+      encodeURIComponent(imageId),
+      base
+    ).href
+  );
+}
+
+async function readPersistentFoodImage(imageId) {
+  if(
+    !imageId ||
+    !('caches' in window)
+  ) {
+    return '';
+  }
+
+  try {
+    const cache=await caches.open(
+      FOOD_IMAGE_CACHE_NAME
+    );
+
+    const response=await cache.match(
+      persistentFoodImageRequest(imageId)
+    );
+
+    return response
+      ? await response.text()
+      : '';
+  } catch {
+    return '';
+  }
+}
+
+async function writePersistentFoodImage(
+  imageId,
+  dataUrl
+) {
+  if(
+    !imageId ||
+    !dataUrl ||
+    !('caches' in window)
+  ) {
+    return;
+  }
+
+  try {
+    const cache=await caches.open(
+      FOOD_IMAGE_CACHE_NAME
+    );
+
+    await cache.put(
+      persistentFoodImageRequest(imageId),
+      new Response(
+        dataUrl,
+        {
+          headers:{
+            'Content-Type':'text/plain;charset=utf-8',
+            'Cache-Control':'private,max-age=31536000'
+          }
+        }
+      )
+    );
+  } catch {}
+}
+
+async function deletePersistentFoodImage(
+  imageId
+) {
+  if(
+    !imageId ||
+    !('caches' in window)
+  ) {
+    return;
+  }
+
+  try {
+    const cache=await caches.open(
+      FOOD_IMAGE_CACHE_NAME
+    );
+
+    await cache.delete(
+      persistentFoodImageRequest(imageId)
+    );
+  } catch {}
+}
+
+async function clearPersistentFoodImageCache() {
+  foodImageDataCache.clear();
+  foodImageInflight.clear();
+
+  if(!('caches' in window)) return;
+
+  try {
+    await caches.delete(
+      FOOD_IMAGE_CACHE_NAME
+    );
+  } catch {}
+}
+
 async function getFoodImageData(imageId) {
   if(!imageId) return '';
 
@@ -2362,21 +2644,56 @@ async function getFoodImageData(imageId) {
     return foodImageDataCache.get(imageId);
   }
 
-  const r=await api(
-    'getFoodImage',
-    {
-      familyId:currentFamilyId,
-      imageId
-    },
-    30000
-  );
+  if(foodImageInflight.has(imageId)) {
+    return foodImageInflight.get(imageId);
+  }
 
-  foodImageDataCache.set(
+  const task=(async()=>{
+    const cached=
+      await readPersistentFoodImage(imageId);
+
+    if(cached) {
+      foodImageDataCache.set(
+        imageId,
+        cached
+      );
+      return cached;
+    }
+
+    const r=await api(
+      'getFoodImage',
+      {
+        familyId:currentFamilyId,
+        imageId
+      },
+      30000
+    );
+
+    foodImageDataCache.set(
+      imageId,
+      r.dataUrl
+    );
+
+    writePersistentFoodImage(
+      imageId,
+      r.dataUrl
+    );
+
+    return r.dataUrl;
+  })();
+
+  foodImageInflight.set(
     imageId,
-    r.dataUrl
+    task
   );
 
-  return r.dataUrl;
+  try {
+    return await task;
+  } finally {
+    foodImageInflight.delete(
+      imageId
+    );
+  }
 }
 
 async function loadFoodImageElement(img) {
@@ -2388,7 +2705,7 @@ async function loadFoodImageElement(img) {
 
   img.dataset.loaded='1';
 
-  const wrap=img.closest('.food-thumb');
+  const wrap=img.parentElement;
   wrap?.classList.add('loading');
 
   try {
@@ -2417,8 +2734,10 @@ async function loadFoodImageElement(img) {
 
     wrap?.classList.remove('loading');
 
-    wrap.innerHTML=
-      '<div class="food-thumb-broken">照片載入失敗</div>';
+    if(wrap) {
+      wrap.innerHTML=
+        '<div class="food-thumb-broken">照片載入失敗</div>';
+    }
   }
 }
 
@@ -2455,7 +2774,7 @@ function observeFoodImages(root=document) {
           }
         },
         {
-          rootMargin:'160px'
+          rootMargin:'220px'
         }
       );
   }
@@ -2464,6 +2783,28 @@ function observeFoodImages(root=document) {
     foodImageObserver.observe(img)
   );
 }
+
+function prefetchFoodImages(items,limit=4) {
+  const ids=[];
+
+  for(const f of items||[]) {
+    if(!f.imageId) continue;
+    if(ids.includes(f.imageId)) continue;
+
+    ids.push(f.imageId);
+
+    if(ids.length>=limit) break;
+  }
+
+  if(!ids.length) return;
+
+  setTimeout(()=>{
+    ids.forEach(id=>{
+      getFoodImageData(id).catch(()=>{});
+    });
+  },0);
+}
+
 
 async function renderEditPhotoPreview() {
   show(
@@ -2601,6 +2942,73 @@ $('editPhotoRemoveBtn').onclick=()=>{
     '',
     false
   );
+};
+
+
+function foodPhotoStatusText(f) {
+  const d=daysLeft(f.expiry);
+
+  if(d<0) return `已過期 ${Math.abs(d)} 天`;
+  if(d===0) return '今天到期';
+  return `剩 ${d} 天`;
+}
+
+window.openFoodPhoto=async id=>{
+  const f=foods.find(x=>x.id===id);
+
+  if(!f||!f.imageId) return;
+
+  $('foodPhotoTitle').textContent=
+    `${f.name} ×${f.qty}`;
+
+  $('foodPhotoStage').innerHTML=
+    '<div class="photo-dialog-loading">正在載入照片…</div>';
+
+  $('foodPhotoInfo').innerHTML=`
+    <div class="label">到期日</div>
+    <div class="value">${escapeHtml(f.expiry)}</div>
+
+    <div class="label">狀態</div>
+    <div class="value">${escapeHtml(foodPhotoStatusText(f))}</div>
+
+    <div class="label">位置</div>
+    <div class="value">${escapeHtml(f.location||'')}</div>
+
+    <div class="label">數量</div>
+    <div class="value">${Number(f.qty||0)}</div>
+  `;
+
+  if(f.note) {
+    $('foodPhotoNote').textContent=
+      `備註：${f.note}`;
+    show('foodPhotoNote',true);
+  } else {
+    $('foodPhotoNote').textContent='';
+    show('foodPhotoNote',false);
+  }
+
+  $('foodPhotoDialog').showModal();
+
+  try {
+    const dataUrl=
+      await getFoodImageData(
+        f.imageId
+      );
+
+    if(!$('foodPhotoDialog').open) return;
+
+    $('foodPhotoStage').innerHTML=
+      `<img src="${dataUrl}" alt="${escapeHtml(f.name)}">`;
+  } catch(err) {
+    if(!$('foodPhotoDialog').open) return;
+
+    $('foodPhotoStage').innerHTML=
+      `<div class="photo-dialog-loading">照片載入失敗：${escapeHtml(err.message)}</div>`;
+  }
+};
+
+$('foodPhotoCloseBtn').onclick=()=>{
+  $('foodPhotoDialog').close();
 };
 
 async function loadFamily(retryCount = 0) {
@@ -2762,6 +3170,17 @@ window.removeFood=id=>{
   if(!confirm('確定刪除？')) return;
 
   const f=foods.find(x=>x.id===id);
+
+  if(f?.imageId) {
+    foodImageDataCache.delete(
+      f.imageId
+    );
+
+    deletePersistentFoodImage(
+      f.imageId
+    );
+  }
+
   foods=foods.filter(x=>x.id!==id);
 
   if(id.startsWith('tmp-')) {
@@ -2880,6 +3299,19 @@ $('editSaveBtn').onclick=()=>{
       expectedUpdatedAt:oldUpdatedAt,
       food:clientFoodPayload(f)
     });
+  }
+
+  if(
+    editOriginalImageId &&
+    editOriginalImageId!==f.imageId
+  ) {
+    foodImageDataCache.delete(
+      editOriginalImageId
+    );
+
+    deletePersistentFoodImage(
+      editOriginalImageId
+    );
   }
 
   editPendingImageId='';
@@ -3048,7 +3480,14 @@ function renderList() {
       <div class="food compact-food ${f._pending?'pending':''}">
         <div class="food-card-layout">
           ${f.imageId
-            ? `<div class="food-thumb">
+            ? `<div
+                 class="food-thumb"
+                 role="button"
+                 tabindex="0"
+                 title="查看照片"
+                 onclick="openFoodPhoto('${f.id}')"
+                 onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openFoodPhoto('${f.id}')}"
+               >
                  <img
                    class="food-thumb-img"
                    data-food-image="${escapeHtml(f.imageId)}"
@@ -3097,6 +3536,7 @@ function renderList() {
   }).join('');
 
   observeFoodImages(box);
+  prefetchFoodImages(sorted,4);
 }
 
 function localDateIso(date) {
@@ -3192,8 +3632,29 @@ function renderCalendarDayDetail() {
       return `
         <div class="calendar-detail-item">
           <div class="calendar-detail-item-top">
-            <div class="calendar-detail-item-name">
-              ${escapeHtml(f.name)} ×${f.qty}
+            <div class="calendar-detail-main">
+              ${f.imageId
+                ? `<div
+                     class="calendar-detail-thumb"
+                     role="button"
+                     tabindex="0"
+                     title="查看照片"
+                     onclick="openFoodPhoto('${f.id}')"
+                     onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openFoodPhoto('${f.id}')}"
+                   >
+                     <img
+                       data-food-image="${escapeHtml(f.imageId)}"
+                       alt="${escapeHtml(f.name)}"
+                     >
+                   </div>`
+                : ''
+              }
+
+              <div class="calendar-detail-text">
+                <div class="calendar-detail-item-name">
+                  ${escapeHtml(f.name)} ×${f.qty}
+                </div>
+              </div>
             </div>
 
             <div class="actions">
@@ -3220,6 +3681,7 @@ function renderCalendarDayDetail() {
 
   box.innerHTML=html;
   show('calendarDayDetail',true);
+  observeFoodImages(box);
 }
 
 window.selectCalendarDay=ds=>{
@@ -3317,7 +3779,27 @@ function renderCalendar() {
         </div>
 
         ${shown.map(f=>
-          `<div class="event ${calendarEventClass(f)}">${escapeHtml(f.name)} ×${f.qty}</div>`
+          `<div class="event ${calendarEventClass(f)}">
+             <div class="calendar-event-row">
+               ${f.imageId
+                 ? `<span
+                      class="calendar-event-thumb"
+                      role="button"
+                      tabindex="0"
+                      title="查看照片"
+                      onclick="event.stopPropagation();openFoodPhoto('${f.id}')"
+                      onkeydown="if(event.key==='Enter'||event.key===' '){event.stopPropagation();event.preventDefault();openFoodPhoto('${f.id}')}"
+                    >
+                      <img
+                        data-food-image="${escapeHtml(f.imageId)}"
+                        alt="${escapeHtml(f.name)}"
+                      >
+                    </span>`
+                 : ''
+               }
+               <span>${escapeHtml(f.name)} ×${f.qty}</span>
+             </div>
+           </div>`
         ).join('')}
 
         ${more
@@ -3334,6 +3816,7 @@ function renderCalendar() {
   );
 
   $('calendar').innerHTML=h;
+  observeFoodImages($('calendar'));
   renderCalendarDayDetail();
 }
 
@@ -3734,6 +4217,7 @@ function enableBackdropClose(dialog) {
 
 enableBackdropClose($('groupDialog'));
 enableBackdropClose($('familyDialog'));
+enableBackdropClose($('foodPhotoDialog'));
 
 function renderFamilyManagement() {
   const f=currentFamilyDetails;
