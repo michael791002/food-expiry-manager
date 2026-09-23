@@ -94,6 +94,21 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
 .ocr-preview-wrap{position:relative;margin-top:12px;background:#111;border-radius:12px;overflow:hidden;min-height:180px;display:flex;align-items:center;justify-content:center}
 #ocrCanvas{display:block;max-width:100%;height:auto;touch-action:none;cursor:crosshair}
 .ocr-help{font-size:12px;color:#667085;line-height:1.5;margin-top:8px}
+.ocr-dropzone{
+  border:2px dashed #c8d3dc;
+  border-radius:12px;
+  padding:18px;
+  text-align:center;
+  color:#667085;
+  background:#f8fafc;
+  margin-top:10px;
+  transition:.15s;
+}
+.ocr-dropzone.dragover{
+  border-color:#1686a7;
+  background:#eef8fb;
+}
+.ocr-dropzone strong{display:block;color:#315c69;margin-bottom:4px}
 .ocr-source-buttons{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .ocr-source-buttons button{width:auto;flex:1}
 .ocr-file-input{display:none}
@@ -328,8 +343,16 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
       <button id="ocrGalleryBtn" class="ghost" type="button">🖼 相簿</button>
     </div>
 
-    <div class="ocr-source-buttons ocr-desktop-only">
-      <button id="ocrDesktopFileBtn" class="ghost" type="button">🖼 選擇圖片</button>
+    <div class="ocr-desktop-only">
+      <div style="width:100%">
+        <div id="ocrDropZone" class="ocr-dropzone">
+          <strong>拖曳圖片到這裡</strong>
+          <span>或使用下方按鈕選擇圖片</span>
+        </div>
+        <div class="ocr-source-buttons">
+          <button id="ocrDesktopFileBtn" class="ghost" type="button">🖼 選擇圖片</button>
+        </div>
+      </div>
     </div>
 
     <input id="ocrCameraFile" class="ocr-file-input" type="file" accept="image/*" capture="environment">
@@ -1908,9 +1931,13 @@ $('ocrCameraBtn').onclick = () => $('ocrCameraFile').click();
 $('ocrGalleryBtn').onclick = () => $('ocrGalleryFile').click();
 $('ocrDesktopFileBtn').onclick = () => $('ocrGalleryFile').click();
 
-async function handleOcrFileSelection(e) {
-  const file = e.target.files && e.target.files[0];
+async function loadOcrFile(file) {
   if (!file) return;
+
+  if (!String(file.type || '').startsWith('image/')) {
+    setStatus('ocrStatus', '請選擇圖片檔案。', 'err');
+    return;
+  }
 
   try {
     // 某些手機瀏覽器從相機 / 相簿返回頁面時，
@@ -1929,14 +1956,49 @@ async function handleOcrFileSelection(e) {
     show('ocrHelp', true);
     show('ocrResetCropBtn', false);
     $('ocrStartBtn').disabled = false;
-    setStatus('ocrStatus', '圖片已載入。可直接辨識，或拖曳框選日期區域。', 'ok');
+    show('ocrAdvancedBtn', false);
+    setStatus(
+      'ocrStatus',
+      '圖片已載入。建議先框選日期那一小塊，再開始辨識，準確率會高很多。',
+      'ok'
+    );
   } catch (e2) {
     setStatus('ocrStatus', '圖片載入失敗：' + e2.message, 'err');
   }
 }
 
+async function handleOcrFileSelection(e) {
+  const file = e.target.files && e.target.files[0];
+  await loadOcrFile(file);
+}
+
 $('ocrCameraFile').onchange = handleOcrFileSelection;
 $('ocrGalleryFile').onchange = handleOcrFileSelection;
+
+// PC 拖曳圖片
+const ocrDropZone = $('ocrDropZone');
+if (ocrDropZone) {
+  ['dragenter','dragover'].forEach(name => {
+    ocrDropZone.addEventListener(name, e => {
+      e.preventDefault();
+      e.stopPropagation();
+      ocrDropZone.classList.add('dragover');
+    });
+  });
+
+  ['dragleave','drop'].forEach(name => {
+    ocrDropZone.addEventListener(name, e => {
+      e.preventDefault();
+      e.stopPropagation();
+      ocrDropZone.classList.remove('dragover');
+    });
+  });
+
+  ocrDropZone.addEventListener('drop', async e => {
+    const file = e.dataTransfer?.files?.[0];
+    await loadOcrFile(file);
+  });
+}
 
 function fileToImage(file) {
   return new Promise((resolve, reject) => {
@@ -2108,6 +2170,19 @@ function makeOcrSourceCanvas() {
   return out;
 }
 
+function upscaleCanvas(source, factor = 3) {
+  const out = document.createElement('canvas');
+  out.width = Math.max(1, Math.round(source.width * factor));
+  out.height = Math.max(1, Math.round(source.height * factor));
+
+  const ctx = out.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(source, 0, 0, out.width, out.height);
+
+  return out;
+}
+
 function preprocessCanvas(source, mode) {
   const out = document.createElement('canvas');
   out.width = source.width;
@@ -2121,16 +2196,38 @@ function preprocessCanvas(source, mode) {
   const img = ctx.getImageData(0,0,out.width,out.height);
   const d = img.data;
 
-  for (let i=0;i<d.length;i+=4) {
-    const gray = Math.round(d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114);
+  // 先算灰階平均，讓 threshold 能跟著照片亮度調整。
+  let graySum = 0;
+  const grays = new Uint8Array(d.length / 4);
+
+  for (let i=0, p=0;i<d.length;i+=4,p++) {
+    const gray = Math.round(
+      d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114
+    );
+    grays[p] = gray;
+    graySum += gray;
+  }
+
+  const avg = graySum / grays.length;
+
+  for (let i=0, p=0;i<d.length;i+=4,p++) {
+    const gray = grays[p];
     let v = gray;
 
-    if (mode === 'contrast') {
-      v = gray > 145 ? 255 : 0;
+    if (mode === 'gray') {
+      // 拉大中間調對比
+      v = Math.max(0, Math.min(255, (gray - 128) * 1.55 + 128));
+    } else if (mode === 'contrast') {
+      // 自適應門檻：小黑字 / 點陣字在淺背景上通常較有效
+      const threshold = Math.max(105, Math.min(185, avg * 0.82));
+      v = gray > threshold ? 255 : 0;
+    } else if (mode === 'softThreshold') {
+      const threshold = Math.max(115, Math.min(195, avg * 0.9));
+      if (gray < threshold - 15) v = 0;
+      else if (gray > threshold + 15) v = 255;
+      else v = Math.max(0, Math.min(255, (gray - threshold) * 6 + 128));
     } else if (mode === 'invert') {
       v = 255 - gray;
-    } else {
-      v = gray;
     }
 
     d[i]=d[i+1]=d[i+2]=v;
@@ -2155,16 +2252,21 @@ $('ocrStartBtn').onclick = async () => {
 
     const base = makeOcrSourceCanvas();
 
+    // 小字 OCR 最常失敗在解析度不足，因此先放大 3 倍再灰階增強。
+    const enlarged = upscaleCanvas(base, 3);
+    const prepared = preprocessCanvas(enlarged, 'gray');
+
     setStatus('ocrStatus','正在快速辨識日期…');
 
-    // 快速模式只跑一次英文 OCR。
-    // 日期大多是阿拉伯數字，這比三語言 × 四版本快非常多。
     const result = await Tesseract.recognize(
-      base,
+      prepared,
       'eng',
       {
         logger: m => {
-          if (m.status === 'recognizing text' && typeof m.progress === 'number') {
+          if (
+            m.status === 'recognizing text' &&
+            typeof m.progress === 'number'
+          ) {
             $('ocrProgressBar').style.width =
               Math.max(5, m.progress * 100).toFixed(0) + '%';
           }
@@ -2177,7 +2279,8 @@ $('ocrStartBtn').onclick = async () => {
     const combined=result.data.text || '';
     ocrCandidates=extractDateCandidates(combined);
 
-    $('ocrRawText').textContent=combined.trim() || '(沒有辨識到文字)';
+    $('ocrRawText').textContent =
+      combined.trim() || '(沒有辨識到文字)';
     renderOcrCandidates();
     show('ocrResults',true);
 
@@ -2190,7 +2293,7 @@ $('ocrStartBtn').onclick = async () => {
     } else {
       setStatus(
         'ocrStatus',
-        '快速辨識沒有找到日期。可以再試「加強辨識（中 / 日文）」，或直接手動輸入。',
+        '快速辨識沒有找到日期。建議先框選日期區域，再試「加強辨識（中 / 日文）」。',
         'err'
       );
       show('ocrAdvancedBtn', true);
@@ -2217,35 +2320,55 @@ $('ocrAdvancedBtn').onclick = async () => {
     $('ocrApplyBtn').disabled=true;
     show('ocrProgressBox',true);
     $('ocrProgressBar').style.width='5%';
-    setStatus('ocrStatus','正在載入繁中 / 日文辨識模型，第一次可能需要較久…');
+    setStatus(
+      'ocrStatus',
+      '正在加強辨識小字與點陣日期，第一次載入中 / 日文模型可能較久…'
+    );
 
     const base=makeOcrSourceCanvas();
-    const enhanced=preprocessCanvas(base,'contrast');
+    const enlarged=upscaleCanvas(base,3);
 
-    // 加強模式只跑一個高對比版本，不再連跑四次。
-    const result=await Tesseract.recognize(
-      enhanced,
-      'eng+chi_tra+jpn',
-      {
-        logger:m=>{
-          if(m.status==='recognizing text' && typeof m.progress==='number') {
-            $('ocrProgressBar').style.width =
-              Math.max(5,m.progress*100).toFixed(0)+'%';
+    const variants=[
+      preprocessCanvas(enlarged,'contrast'),
+      preprocessCanvas(enlarged,'softThreshold')
+    ];
+
+    let texts=[];
+
+    for(let i=0;i<variants.length;i++) {
+      const result=await Tesseract.recognize(
+        variants[i],
+        'eng+chi_tra+jpn',
+        {
+          logger:m=>{
+            if(
+              m.status==='recognizing text' &&
+              typeof m.progress==='number'
+            ) {
+              const overall=((i+m.progress)/variants.length)*100;
+              $('ocrProgressBar').style.width =
+                Math.max(5,overall).toFixed(0)+'%';
+            }
           }
         }
-      }
-    );
+      );
+
+      texts.push(result.data.text || '');
+    }
 
     $('ocrProgressBar').style.width='100%';
 
-    const text2=result.data.text || '';
     const existingRaw=$('ocrRawText').textContent || '';
-    const combined=(existingRaw && !existingRaw.startsWith('('))
-      ? existingRaw + '\n--- 加強辨識 ---\n' + text2
-      : text2;
+    const added=texts.join('\n--- 加強版本 ---\n');
+
+    const combined=
+      (existingRaw && !existingRaw.startsWith('('))
+        ? existingRaw + '\n--- 加強辨識 ---\n' + added
+        : added;
 
     ocrCandidates=extractDateCandidates(combined);
-    $('ocrRawText').textContent=combined.trim() || '(沒有辨識到文字)';
+    $('ocrRawText').textContent =
+      combined.trim() || '(沒有辨識到文字)';
     renderOcrCandidates();
     show('ocrResults',true);
 
@@ -2258,7 +2381,7 @@ $('ocrAdvancedBtn').onclick = async () => {
     } else {
       setStatus(
         'ocrStatus',
-        '仍然沒有找到日期。可以重新框選較小範圍再試，或直接手動輸入。',
+        '仍然沒有找到日期。建議把框選範圍縮到只剩日期文字，再辨識一次；也可以直接手動輸入。',
         'err'
       );
     }
@@ -2277,7 +2400,7 @@ function extractDateCandidates(text) {
   const candidates = [];
   const seen = new Set();
 
-  function add(y,m,d,source,score=0) {
+  function addYMD(y,m,d,source,score=0) {
     y = Number(y);
     m = Number(m);
     d = Number(d);
@@ -2302,40 +2425,134 @@ function extractDateCandidates(text) {
       dt.getDate() !== d
     ) return;
 
-    const iso = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const iso =
+      `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 
-    if (seen.has(iso)) return;
+    const existing = candidates.find(x => x.iso === iso);
+
+    if (existing) {
+      // 同一日期被不同規則找到時，保留較高分數與較有意義的來源。
+      if (score > existing.score) {
+        existing.score = score;
+        existing.source = source;
+      }
+      return;
+    }
+
     seen.add(iso);
-
     candidates.push({iso,source,score});
   }
 
-  const keywordRe = /(有效日期|有效期限|賞味期限|消費期限|保存期限|到期日|EXP|EXPIRY|BEST\s*BEFORE|USE\s*BY)/ig;
+  const keywordRe =
+    /(有效日期|有效期限|賞味期限|消費期限|保存期限|到期日|EXP|EXPIRY|BEST\s*BEFORE|USE\s*BY)/i;
 
-  const datePatterns = [
-    /(\d{2,4})\s*[年\/\-.]\s*(\d{1,2})\s*[月\/\-.]\s*(\d{1,2})\s*日?/g,
-    /(?:民國|ROC)?\s*(\d{2,3})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{1,2})/g,
-    /(\d{2})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{1,2})/g,
-    /\b(20\d{2})(\d{2})(\d{2})\b/g,
-    /\b(\d{2,4})\s+(\d{1,2})\s+(\d{1,2})\b/g
-  ];
+  const dmyHintRe =
+    /(DD\s*MM\s*YYYY|DD[\/\-.]MM[\/\-.]YYYY|日\s*[\/\-.]?\s*月\s*[\/\-.]?\s*年)/i;
 
   const lines = text.split(/\r?\n/);
 
   for (const line of lines) {
     const hasKeyword = keywordRe.test(line);
-    keywordRe.lastIndex = 0;
+    const hasDmyHint = dmyHintRe.test(line);
 
-    for (const re of datePatterns) {
-      re.lastIndex = 0;
+    // 1) YYYY.MM.DD / YYYY-MM-DD / YYYY/MM/DD / YYYY年MM月DD日
+    {
+      const re = /(\d{4})\s*[年\/\-.]\s*(\d{1,2})\s*[月\/\-.]\s*(\d{1,2})\s*日?/g;
       let m;
       while ((m = re.exec(line))) {
-        add(m[1],m[2],m[3],line.trim(),hasKeyword ? 10 : 0);
+        addYMD(m[1],m[2],m[3],line.trim(),hasKeyword ? 12 : 4);
+      }
+    }
+
+    // 2) DD.MM.YYYY / DD-MM-YYYY / DD/MM/YYYY
+    //    例如包裝：20.05.2026
+    {
+      const re = /\b(\d{1,2})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{4})\b/g;
+      let m;
+      while ((m = re.exec(line))) {
+        const d = Number(m[1]);
+        const mo = Number(m[2]);
+        const y = Number(m[3]);
+
+        let score = 5;
+
+        if (hasKeyword) score += 8;
+        if (hasDmyHint) score += 8;
+
+        // 第一段 > 12 時幾乎可確定是 DD/MM/YYYY
+        if (d > 12) score += 6;
+
+        addYMD(y,mo,d,line.trim(),score);
+      }
+    }
+
+    // 3) 兩位年格式：YY.MM.DD
+    //    例如 23.03.16 -> 2023-03-16
+    {
+      const re = /\b(\d{2})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{1,2})\b/g;
+      let m;
+      while ((m = re.exec(line))) {
+        addYMD(m[1],m[2],m[3],line.trim(),hasKeyword ? 10 : 2);
+      }
+    }
+
+    // 4) 民國年 / ROC
+    {
+      const re = /(?:民國|ROC)?\s*(\d{2,3})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{1,2})/g;
+      let m;
+      while ((m = re.exec(line))) {
+        const y = Number(m[1]);
+
+        // 避免把一般兩位西元年和上面規則重複誤判；
+        // 只有明確出現民國/ROC或三位年時提高分數。
+        const explicitRoc = /民國|ROC/i.test(line);
+        const score = explicitRoc ? 12 : (y >= 100 ? 5 : 1);
+
+        addYMD(y,m[2],m[3],line.trim(),score);
+      }
+    }
+
+    // 5) 連續 8 碼：YYYYMMDD
+    {
+      const re = /\b(20\d{2})(\d{2})(\d{2})\b/g;
+      let m;
+      while ((m = re.exec(line))) {
+        addYMD(m[1],m[2],m[3],line.trim(),hasKeyword ? 9 : 2);
+      }
+    }
+
+    // 6) OCR 有時會把分隔符吃掉成空白：YYYY MM DD
+    {
+      const re = /\b(20\d{2})\s+(\d{1,2})\s+(\d{1,2})\b/g;
+      let m;
+      while ((m = re.exec(line))) {
+        addYMD(m[1],m[2],m[3],line.trim(),hasKeyword ? 8 : 1);
       }
     }
   }
 
-  candidates.sort((a,b) => b.score - a.score || a.iso.localeCompare(b.iso));
+  // 如果整份 OCR 文字有 DDMMYYYY 提示，而日期本身在下一行，
+  // 額外掃描一次 DD.MM.YYYY，給較高優先權。
+  if (dmyHintRe.test(text)) {
+    const re = /\b(\d{1,2})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{4})\b/g;
+    let m;
+
+    while ((m = re.exec(text))) {
+      addYMD(
+        m[3],
+        m[2],
+        m[1],
+        m[0],
+        20
+      );
+    }
+  }
+
+  candidates.sort((a,b) =>
+    b.score - a.score ||
+    a.iso.localeCompare(b.iso)
+  );
+
   return candidates;
 }
 
