@@ -1528,6 +1528,11 @@ function applyTheme(theme) {
   } catch (_) {}
 
   refreshThemeButtons();
+
+setTimeout(()=>{
+  prunePersistentFoodImageCache()
+    .catch(()=>{});
+},1200);
 }
 
 function setSettingsMenu(open) {
@@ -2379,7 +2384,10 @@ async function uploadCompressedProductPhoto(
 
   writePersistentFoodImage(
     r.imageId,
-    compressed.dataUrl
+    compressed.dataUrl,
+    {
+      markAccess:true
+    }
   );
 
   return r;
@@ -2530,7 +2538,12 @@ $('newPhotoRemoveBtn').onclick=()=>{
 };
 
 const FOOD_IMAGE_CACHE_NAME = 'food-expiry-product-images-v1';
+const FOOD_IMAGE_CACHE_META_KEY = 'food-expiry-product-image-cache-meta-v1';
+const FOOD_IMAGE_CACHE_MAX_ITEMS = 200;
+const FOOD_IMAGE_CACHE_MAX_BYTES = 50 * 1024 * 1024;
+
 const foodImageInflight = new Map();
+let foodImagePruneTimer = null;
 
 function persistentFoodImageRequest(imageId) {
   const base=new URL(
@@ -2546,7 +2559,249 @@ function persistentFoodImageRequest(imageId) {
   );
 }
 
-async function readPersistentFoodImage(imageId) {
+function readFoodImageCacheMeta() {
+  try {
+    const raw=localStorage.getItem(
+      FOOD_IMAGE_CACHE_META_KEY
+    );
+
+    if(!raw) return {};
+
+    const parsed=JSON.parse(raw);
+
+    return (
+      parsed &&
+      typeof parsed==='object' &&
+      !Array.isArray(parsed)
+    )
+      ? parsed
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeFoodImageCacheMeta(meta) {
+  try {
+    localStorage.setItem(
+      FOOD_IMAGE_CACHE_META_KEY,
+      JSON.stringify(meta||{})
+    );
+  } catch {}
+}
+
+function dataUrlStoredBytes(dataUrl) {
+  // Cache Storage 目前存的是 data URL 文字，
+  // 用 Blob 大小估算實際快取 body 佔用量較接近。
+  try {
+    return new Blob([
+      String(dataUrl||'')
+    ]).size;
+  } catch {
+    return String(dataUrl||'').length;
+  }
+}
+
+function touchFoodImageCacheEntry(
+  imageId,
+  {
+    sizeBytes=null,
+    markAccess=true
+  }={}
+) {
+  if(!imageId) return;
+
+  const meta=readFoodImageCacheMeta();
+  const previous=meta[imageId]||{};
+
+  meta[imageId]={
+    sizeBytes:
+      Number.isFinite(Number(sizeBytes))
+        ? Math.max(0,Number(sizeBytes))
+        : Math.max(
+            0,
+            Number(previous.sizeBytes||0)
+          ),
+    lastAccessAt:
+      markAccess
+        ? Date.now()
+        : Number(
+            previous.lastAccessAt ||
+            Date.now()
+          )
+  };
+
+  writeFoodImageCacheMeta(meta);
+}
+
+function removeFoodImageCacheMeta(imageId) {
+  if(!imageId) return;
+
+  const meta=readFoodImageCacheMeta();
+
+  if(!(imageId in meta)) return;
+
+  delete meta[imageId];
+  writeFoodImageCacheMeta(meta);
+}
+
+function scheduleFoodImageCachePrune() {
+  if(foodImagePruneTimer) {
+    clearTimeout(foodImagePruneTimer);
+  }
+
+  foodImagePruneTimer=setTimeout(()=>{
+    foodImagePruneTimer=null;
+
+    prunePersistentFoodImageCache()
+      .catch(()=>{});
+  },250);
+}
+
+async function prunePersistentFoodImageCache() {
+  if(!('caches' in window)) return;
+
+  let meta=readFoodImageCacheMeta();
+
+  try {
+    const cache=await caches.open(
+      FOOD_IMAGE_CACHE_NAME
+    );
+
+    const requests=await cache.keys();
+    const existingIds=new Set();
+
+    for(const req of requests) {
+      try {
+        const url=new URL(req.url);
+        const marker='/__food_image_cache__/';
+        const pos=url.pathname.indexOf(marker);
+
+        if(pos<0) continue;
+
+        const encoded=url.pathname.slice(
+          pos+marker.length
+        );
+
+        const imageId=decodeURIComponent(
+          encoded
+        );
+
+        if(imageId) {
+          existingIds.add(imageId);
+        }
+      } catch {}
+    }
+
+    // Cache Storage 若被瀏覽器自行清掉，順便移除殘留 metadata。
+    let metaChanged=false;
+
+    for(const imageId of Object.keys(meta)) {
+      if(!existingIds.has(imageId)) {
+        delete meta[imageId];
+        metaChanged=true;
+      }
+    }
+
+    // 如果快取裡有圖片但 metadata 不見了，補一筆。
+    for(const imageId of existingIds) {
+      if(meta[imageId]) continue;
+
+      const response=await cache.match(
+        persistentFoodImageRequest(
+          imageId
+        )
+      );
+
+      let sizeBytes=0;
+
+      if(response) {
+        try {
+          const body=await response.clone().text();
+          sizeBytes=dataUrlStoredBytes(body);
+        } catch {}
+      }
+
+      meta[imageId]={
+        sizeBytes,
+        lastAccessAt:Date.now()
+      };
+
+      metaChanged=true;
+    }
+
+    const items=Object.entries(meta)
+      .map(([imageId,info])=>({
+        imageId,
+        sizeBytes:Math.max(
+          0,
+          Number(info?.sizeBytes||0)
+        ),
+        lastAccessAt:Math.max(
+          0,
+          Number(info?.lastAccessAt||0)
+        )
+      }));
+
+    let totalItems=items.length;
+    let totalBytes=items.reduce(
+      (sum,item)=>
+        sum+item.sizeBytes,
+      0
+    );
+
+    if(
+      totalItems>FOOD_IMAGE_CACHE_MAX_ITEMS ||
+      totalBytes>FOOD_IMAGE_CACHE_MAX_BYTES
+    ) {
+      // 最久沒實際使用的先刪。
+      items.sort(
+        (a,b)=>
+          a.lastAccessAt-b.lastAccessAt
+      );
+
+      for(const item of items) {
+        if(
+          totalItems<=FOOD_IMAGE_CACHE_MAX_ITEMS &&
+          totalBytes<=FOOD_IMAGE_CACHE_MAX_BYTES
+        ) {
+          break;
+        }
+
+        await cache.delete(
+          persistentFoodImageRequest(
+            item.imageId
+          )
+        );
+
+        foodImageDataCache.delete(
+          item.imageId
+        );
+
+        delete meta[item.imageId];
+
+        totalItems--;
+        totalBytes=Math.max(
+          0,
+          totalBytes-item.sizeBytes
+        );
+
+        metaChanged=true;
+      }
+    }
+
+    if(metaChanged) {
+      writeFoodImageCacheMeta(meta);
+    }
+  } catch {}
+}
+
+async function readPersistentFoodImage(
+  imageId,
+  {
+    markAccess=true
+  }={}
+) {
   if(
     !imageId ||
     !('caches' in window)
@@ -2563,9 +2818,25 @@ async function readPersistentFoodImage(imageId) {
       persistentFoodImageRequest(imageId)
     );
 
-    return response
-      ? await response.text()
-      : '';
+    if(!response) {
+      removeFoodImageCacheMeta(
+        imageId
+      );
+      return '';
+    }
+
+    const dataUrl=await response.text();
+
+    touchFoodImageCacheEntry(
+      imageId,
+      {
+        sizeBytes:
+          dataUrlStoredBytes(dataUrl),
+        markAccess
+      }
+    );
+
+    return dataUrl;
   } catch {
     return '';
   }
@@ -2573,7 +2844,10 @@ async function readPersistentFoodImage(imageId) {
 
 async function writePersistentFoodImage(
   imageId,
-  dataUrl
+  dataUrl,
+  {
+    markAccess=true
+  }={}
 ) {
   if(
     !imageId ||
@@ -2600,16 +2874,30 @@ async function writePersistentFoodImage(
         }
       )
     );
+
+    touchFoodImageCacheEntry(
+      imageId,
+      {
+        sizeBytes:
+          dataUrlStoredBytes(dataUrl),
+        markAccess
+      }
+    );
+
+    scheduleFoodImageCachePrune();
   } catch {}
 }
 
 async function deletePersistentFoodImage(
   imageId
 ) {
-  if(
-    !imageId ||
-    !('caches' in window)
-  ) {
+  if(!imageId) return;
+
+  removeFoodImageCacheMeta(
+    imageId
+  );
+
+  if(!('caches' in window)) {
     return;
   }
 
@@ -2628,6 +2916,17 @@ async function clearPersistentFoodImageCache() {
   foodImageDataCache.clear();
   foodImageInflight.clear();
 
+  if(foodImagePruneTimer) {
+    clearTimeout(foodImagePruneTimer);
+    foodImagePruneTimer=null;
+  }
+
+  try {
+    localStorage.removeItem(
+      FOOD_IMAGE_CACHE_META_KEY
+    );
+  } catch {}
+
   if(!('caches' in window)) return;
 
   try {
@@ -2637,26 +2936,56 @@ async function clearPersistentFoodImageCache() {
   } catch {}
 }
 
-async function getFoodImageData(imageId) {
+async function getFoodImageData(
+  imageId,
+  {
+    markAccess=true
+  }={}
+) {
   if(!imageId) return '';
 
   if(foodImageDataCache.has(imageId)) {
-    return foodImageDataCache.get(imageId);
+    const dataUrl=
+      foodImageDataCache.get(imageId);
+
+    if(markAccess) {
+      touchFoodImageCacheEntry(
+        imageId,
+        {
+          sizeBytes:
+            dataUrlStoredBytes(dataUrl),
+          markAccess:true
+        }
+      );
+    }
+
+    return dataUrl;
   }
 
-  if(foodImageInflight.has(imageId)) {
-    return foodImageInflight.get(imageId);
+  const inflightKey=
+    `${imageId}:${markAccess?'view':'prefetch'}`;
+
+  if(foodImageInflight.has(inflightKey)) {
+    return foodImageInflight.get(
+      inflightKey
+    );
   }
 
   const task=(async()=>{
     const cached=
-      await readPersistentFoodImage(imageId);
+      await readPersistentFoodImage(
+        imageId,
+        {
+          markAccess
+        }
+      );
 
     if(cached) {
       foodImageDataCache.set(
         imageId,
         cached
       );
+
       return cached;
     }
 
@@ -2676,14 +3005,17 @@ async function getFoodImageData(imageId) {
 
     writePersistentFoodImage(
       imageId,
-      r.dataUrl
+      r.dataUrl,
+      {
+        markAccess
+      }
     );
 
     return r.dataUrl;
   })();
 
   foodImageInflight.set(
-    imageId,
+    inflightKey,
     task
   );
 
@@ -2691,7 +3023,7 @@ async function getFoodImageData(imageId) {
     return await task;
   } finally {
     foodImageInflight.delete(
-      imageId
+      inflightKey
     );
   }
 }
@@ -2709,8 +3041,14 @@ async function loadFoodImageElement(img) {
   wrap?.classList.add('loading');
 
   try {
+    // 真正顯示到 UI 才算一次實際使用。
     const dataUrl=
-      await getFoodImageData(imageId);
+      await getFoodImageData(
+        imageId,
+        {
+          markAccess:true
+        }
+      );
 
     if(!img.isConnected) return;
 
@@ -2800,7 +3138,13 @@ function prefetchFoodImages(items,limit=4) {
 
   setTimeout(()=>{
     ids.forEach(id=>{
-      getFoodImageData(id).catch(()=>{});
+      // 預抓只是為了加速，不更新 lastAccessAt。
+      getFoodImageData(
+        id,
+        {
+          markAccess:false
+        }
+      ).catch(()=>{});
     });
   },0);
 }
@@ -2992,7 +3336,10 @@ window.openFoodPhoto=async id=>{
   try {
     const dataUrl=
       await getFoodImageData(
-        f.imageId
+        f.imageId,
+        {
+          markAccess:true
+        }
       );
 
     if(!$('foodPhotoDialog').open) return;
