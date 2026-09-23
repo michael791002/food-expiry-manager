@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>食品過期管理 v4.3</title>
+<title>食品過期管理 v4.4</title>
 <style>
 :root {
   font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
@@ -94,6 +94,15 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
 .ocr-preview-wrap{position:relative;margin-top:12px;background:#111;border-radius:12px;overflow:hidden;min-height:180px;display:flex;align-items:center;justify-content:center}
 #ocrCanvas{display:block;max-width:100%;height:auto;touch-action:none;cursor:crosshair}
 .ocr-help{font-size:12px;color:#667085;line-height:1.5;margin-top:8px}
+.ocr-source-buttons{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.ocr-source-buttons button{width:auto;flex:1}
+.ocr-file-input{display:none}
+.ocr-mobile-only{display:none}
+.ocr-desktop-only{display:flex}
+@media (hover:none) and (pointer:coarse){
+  .ocr-mobile-only{display:flex}
+  .ocr-desktop-only{display:none}
+}
 .ocr-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 .ocr-toolbar button{width:auto}
 .ocr-results{margin-top:14px}
@@ -117,7 +126,7 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
-<div class="app" data-build="v4.3">
+<div class="app" data-build="v4.4">
 
 <section id="splash" class="card splash hidden">
   <h1>食品過期管理</h1>
@@ -312,8 +321,19 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
   <div class="modal">
     <h2>掃描食品日期</h2>
 
-    <label for="ocrFile">拍照 / 選擇圖片</label>
-    <input id="ocrFile" type="file" accept="image/*" capture="environment">
+    <label>選擇圖片來源</label>
+
+    <div class="ocr-source-buttons ocr-mobile-only">
+      <button id="ocrCameraBtn" class="ghost" type="button">📷 拍照</button>
+      <button id="ocrGalleryBtn" class="ghost" type="button">🖼 相簿</button>
+    </div>
+
+    <div class="ocr-source-buttons ocr-desktop-only">
+      <button id="ocrDesktopFileBtn" class="ghost" type="button">🖼 選擇圖片</button>
+    </div>
+
+    <input id="ocrCameraFile" class="ocr-file-input" type="file" accept="image/*" capture="environment">
+    <input id="ocrGalleryFile" class="ocr-file-input" type="file" accept="image/*">
 
     <div id="ocrPreviewWrap" class="ocr-preview-wrap hidden">
       <canvas id="ocrCanvas"></canvas>
@@ -600,6 +620,10 @@ function setSyncState(state,text) {
   $('syncDot').className='syncdot '+state;
   $('syncText').textContent=text;
 
+  if (state !== 'dirty') {
+    $('syncText').title = '';
+  }
+
   if (loadFailed) {
     $('syncNowBtn').textContent='重新載入';
     $('syncNowBtn').disabled=false;
@@ -614,9 +638,10 @@ function scheduleSync() {
 
   setSyncState(
     'dirty',
-    `有 ${pendingChanges.length} 筆未同步變更（30 秒後自動同步）`
+    `待同步 ${pendingChanges.length}`
   );
 
+  $('syncText').title = '最後一次修改後 30 秒會自動同步';
   syncTimer=setTimeout(()=>syncPending(),SYNC_DELAY_MS);
 }
 
@@ -1874,7 +1899,11 @@ $('ocrCloseBtn').onclick = () => $('ocrDialog').close();
 
 enableBackdropClose($('ocrDialog'));
 
-$('ocrFile').onchange = async e => {
+$('ocrCameraBtn').onclick = () => $('ocrCameraFile').click();
+$('ocrGalleryBtn').onclick = () => $('ocrGalleryFile').click();
+$('ocrDesktopFileBtn').onclick = () => $('ocrGalleryFile').click();
+
+async function handleOcrFileSelection(e) {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
 
@@ -1893,7 +1922,10 @@ $('ocrFile').onchange = async e => {
   } catch (e2) {
     setStatus('ocrStatus', '圖片載入失敗：' + e2.message, 'err');
   }
-};
+}
+
+$('ocrCameraFile').onchange = handleOcrFileSelection;
+$('ocrGalleryFile').onchange = handleOcrFileSelection;
 
 function fileToImage(file) {
   return new Promise((resolve, reject) => {
@@ -1915,7 +1947,8 @@ function fileToImage(file) {
 }
 
 function resetOcrDialog() {
-  $('ocrFile').value = '';
+  $('ocrCameraFile').value = '';
+  $('ocrGalleryFile').value = '';
   ocrImage = null;
   ocrCrop = null;
   ocrCandidates = [];
