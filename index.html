@@ -1700,6 +1700,11 @@ $('familyCloseBtn').onclick=()=>$('familyDialog').close();
 // 只套用「新增 / 加入群組」與「群組設定」兩個 Pop-up。
 function enableBackdropClose(dialog) {
   dialog.addEventListener('click', e => {
+    // 只有事件本身真的落在 dialog 背景上才判斷是否關閉。
+    // 避免程式呼叫隱藏 file input.click() 時，
+    // 因為座標為 0,0 被誤判成點擊視窗外部。
+    if (e.target !== dialog) return;
+
     const rect=dialog.getBoundingClientRect();
     const inside=
       e.clientX >= rect.left &&
@@ -1908,6 +1913,12 @@ async function handleOcrFileSelection(e) {
   if (!file) return;
 
   try {
+    // 某些手機瀏覽器從相機 / 相簿返回頁面時，
+    // 可能會讓 modal dialog 關閉，因此先保證 OCR 視窗是開啟的。
+    if (!$('ocrDialog').open) {
+      $('ocrDialog').showModal();
+    }
+
     setStatus('ocrStatus', '正在載入圖片…');
     const img = await fileToImage(file);
     ocrImage = img;
