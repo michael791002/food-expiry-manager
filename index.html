@@ -124,6 +124,37 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
 .ocr-candidate{display:flex;gap:10px;align-items:center;border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin-top:8px;cursor:pointer}
 .ocr-candidate input{width:auto}
 .ocr-text{white-space:pre-wrap;background:#f8fafc;border-radius:10px;padding:10px;font-size:12px;color:#475467;max-height:140px;overflow:auto;margin-top:10px}
+.ocr-confidence{font-size:12px;font-weight:700}
+.ocr-confidence.high{color:#227a43}
+.ocr-confidence.mid{color:#9a6414}
+.ocr-confidence.low{color:#b63737}
+.ocr-debug-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:10px;
+  margin-top:10px;
+}
+.ocr-debug-card{
+  border:1px solid #e4e7ec;
+  border-radius:10px;
+  padding:8px;
+  background:#fff;
+}
+.ocr-debug-card .small{
+  margin-bottom:6px;
+  font-weight:700;
+}
+.ocr-debug-card canvas,
+.ocr-debug-card img{
+  width:100%;
+  height:auto;
+  display:block;
+  background:#fff;
+  border-radius:6px;
+  image-rendering:auto;
+}
+
+
 .ocr-progress{height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin-top:10px}
 .ocr-progress > div{height:100%;width:0%;background:#1686a7;transition:width .2s}
 .scan-note{font-size:12px;color:#667085;margin-top:8px}
@@ -369,7 +400,7 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
     <div class="ocr-toolbar">
       <button id="ocrResetCropBtn" class="ghost hidden" type="button">清除框選</button>
       <button id="ocrStartBtn" class="ghost" type="button" disabled>快速辨識</button>
-      <button id="ocrAdvancedBtn" class="ghost hidden" type="button">加強辨識（中 / 日文）</button>
+      <button id="ocrAdvancedBtn" class="ghost hidden" type="button">加強日期辨識</button>
     </div>
 
     <div id="ocrStatus" class="status"></div>
@@ -382,6 +413,11 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
       <h3>辨識到的日期</h3>
       <div id="ocrCandidateList"></div>
       <div id="ocrRawText" class="ocr-text"></div>
+    <details id="ocrDebugDetails" style="margin-top:10px">
+      <summary style="cursor:pointer;font-weight:700">查看辨識影像預覽</summary>
+      <div id="ocrDebugGrid" class="ocr-debug-grid"></div>
+    </details>
+
     </div>
 
     <div class="modal-actions">
@@ -1959,7 +1995,7 @@ async function loadOcrFile(file) {
     show('ocrAdvancedBtn', false);
     setStatus(
       'ocrStatus',
-      '圖片已載入。建議先框選日期那一小塊，再開始辨識，準確率會高很多。',
+      '圖片已載入。建議先框選日期那一小塊；快速辨識會優先使用 PP-OCRv6，失敗時再由 Tesseract 備援。',
       'ok'
     );
   } catch (e2) {
@@ -2237,6 +2273,789 @@ function preprocessCanvas(source, mode) {
   return out;
 }
 
+
+let cvReadyPromise = null;
+
+function waitForOpenCv(timeoutMs = 12000) {
+  if (window.cv && cv.Mat) {
+    return Promise.resolve(true);
+  }
+
+  if (cvReadyPromise) return cvReadyPromise;
+
+  cvReadyPromise = new Promise(resolve => {
+    const started = Date.now();
+
+    const timer = setInterval(() => {
+      try {
+        if (window.cv && cv.Mat) {
+          clearInterval(timer);
+          resolve(true);
+          return;
+        }
+      } catch {}
+
+      if (Date.now() - started >= timeoutMs) {
+        clearInterval(timer);
+        resolve(false);
+      }
+    }, 150);
+  });
+
+  return cvReadyPromise;
+}
+
+let dateOcrWorker = null;
+let dateOcrWorkerInitPromise = null;
+
+async function getDateOcrWorker(logger) {
+  if (dateOcrWorker) return dateOcrWorker;
+
+  if (!dateOcrWorkerInitPromise) {
+    dateOcrWorkerInitPromise = (async () => {
+      const worker = await Tesseract.createWorker('eng', 1, {
+        logger: m => {
+          if (typeof window.__dateOcrLogger === 'function') {
+            window.__dateOcrLogger(m);
+          }
+        }
+      });
+
+      await worker.setParameters({
+        tessedit_char_whitelist: '0123456789./-',
+        tessedit_pageseg_mode: '7',
+        preserve_interword_spaces: '0'
+      });
+
+      dateOcrWorker = worker;
+      return worker;
+    })();
+  }
+
+  if (typeof logger === 'function') {
+    window.__dateOcrLogger = logger;
+  }
+
+  try {
+    return await dateOcrWorkerInitPromise;
+  } catch (e) {
+    dateOcrWorkerInitPromise = null;
+    dateOcrWorker = null;
+    throw e;
+  }
+}
+
+
+
+let paddleOcrInstance = null;
+let paddleOcrInitPromise = null;
+
+async function getPaddleOcr() {
+  if (paddleOcrInstance) return paddleOcrInstance;
+  if (paddleOcrInitPromise) return paddleOcrInitPromise;
+
+  paddleOcrInitPromise = (async () => {
+    if (!/^https?:$/.test(location.protocol)) {
+      throw new Error(
+        'PP-OCRv6 需要從 HTTP/HTTPS 網頁執行；目前是 ' +
+        location.protocol
+      );
+    }
+
+    const mod = await import(
+      'https://cdn.jsdelivr.net/npm/@paddleocr/paddleocr-js@0.4.2/+esm'
+    );
+
+    paddleOcrInstance = await mod.PaddleOCR.create({
+      textDetectionModelName:'PP-OCRv6_tiny_det',
+      textRecognitionModelName:'PP-OCRv6_tiny_rec',
+      worker:false,
+      ortOptions:{
+        backend:'wasm',
+        wasmPaths:
+          'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/',
+        numThreads:1,
+        simd:true
+      }
+    });
+
+    return paddleOcrInstance;
+  })();
+
+  try {
+    return await paddleOcrInitPromise;
+  } catch (e) {
+    paddleOcrInitPromise = null;
+    paddleOcrInstance = null;
+    throw e;
+  }
+}
+
+async function runPaddleOcr(canvas) {
+  const ocr = await getPaddleOcr();
+
+  const [result] = await ocr.predict(canvas,{
+    textDetThresh:0.25,
+    textDetBoxThresh:0.45,
+    textRecScoreThresh:0.05
+  });
+
+  const items = result?.items || [];
+
+  return {
+    text:items
+      .map(x => String(x.text || '').trim())
+      .filter(Boolean)
+      .join('\n'),
+    items,
+    metrics:result?.metrics || null
+  };
+}
+
+function paddleItemsToDebugText(items) {
+  if (!items?.length) return '(空)';
+
+  return items.map((x,i) => {
+    const score =
+      typeof x.score === 'number'
+        ? `  [${(x.score*100).toFixed(1)}%]`
+        : '';
+
+    return `${i+1}. ${x.text || ''}${score}`;
+  }).join('\n');
+}
+
+async function runGeneralOcr(canvas, logger, langs = 'eng') {
+  return Tesseract.recognize(
+    canvas,
+    langs,
+    {
+      logger
+    }
+  );
+}
+
+function collectGeneralDateCandidates(ocrRuns) {
+  const voteMap = new Map();
+
+  for (const run of ocrRuns) {
+    const normalized = normalizeOcrText(run.text);
+    const candidates = extractDateCandidates(normalized);
+
+    for (const c of candidates) {
+      if (!voteMap.has(c.iso)) {
+        voteMap.set(c.iso, {
+          iso:c.iso,
+          votes:0,
+          score:0,
+          sources:[]
+        });
+      }
+
+      const item = voteMap.get(c.iso);
+      item.votes += 1;
+      item.score += Number(c.score || 0) + 3; // 一般 OCR 稍微加權
+      item.sources.push(run.name);
+    }
+  }
+
+  return [...voteMap.values()]
+    .sort((a,b) =>
+      b.votes - a.votes ||
+      b.score - a.score ||
+      a.iso.localeCompare(b.iso)
+    );
+}
+
+function mergeDateVotes(...voteLists) {
+  const map = new Map();
+
+  for (const list of voteLists) {
+    for (const v of (list || [])) {
+      if (!map.has(v.iso)) {
+        map.set(v.iso,{
+          iso:v.iso,
+          votes:0,
+          score:0,
+          sources:[]
+        });
+      }
+
+      const x = map.get(v.iso);
+      x.votes += Number(v.votes || 0);
+      x.score += Number(v.score || 0);
+      x.sources.push(...(v.sources || []));
+    }
+  }
+
+  return [...map.values()]
+    .sort((a,b) =>
+      b.votes - a.votes ||
+      b.score - a.score ||
+      a.iso.localeCompare(b.iso)
+    );
+}
+
+async function runDateOcr(canvas, logger, psm = '7') {
+  window.__dateOcrLogger =
+    typeof logger === 'function' ? logger : null;
+
+  const worker = await getDateOcrWorker(logger);
+
+  await worker.setParameters({
+    tessedit_char_whitelist: '0123456789./-',
+    tessedit_pageseg_mode: String(psm),
+    preserve_interword_spaces: '0'
+  });
+
+  return worker.recognize(canvas);
+}
+
+function sharpenCanvas(source) {
+  const out = document.createElement('canvas');
+  out.width = source.width;
+  out.height = source.height;
+
+  const ctx = out.getContext('2d');
+  ctx.drawImage(source,0,0);
+
+  const img = ctx.getImageData(0,0,out.width,out.height);
+  const srcData = new Uint8ClampedArray(img.data);
+  const d = img.data;
+  const w = out.width;
+  const h = out.height;
+
+  const k = [
+     0,-1, 0,
+    -1, 5,-1,
+     0,-1, 0
+  ];
+
+  for (let y=1;y<h-1;y++) {
+    for (let x=1;x<w-1;x++) {
+      for (let c=0;c<3;c++) {
+        let sum=0;
+        let ki=0;
+
+        for (let yy=-1;yy<=1;yy++) {
+          for (let xx=-1;xx<=1;xx++) {
+            const idx=((y+yy)*w+(x+xx))*4+c;
+            sum += srcData[idx]*k[ki++];
+          }
+        }
+
+        const i=(y*w+x)*4+c;
+        d[i]=Math.max(0,Math.min(255,sum));
+      }
+    }
+  }
+
+  ctx.putImageData(img,0,0);
+  return out;
+}
+
+function nearestUpscaleCanvas(source, factor = 6) {
+  const out = document.createElement('canvas');
+  out.width = Math.max(1, Math.round(source.width * factor));
+  out.height = Math.max(1, Math.round(source.height * factor));
+
+  const ctx = out.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(source,0,0,out.width,out.height);
+
+  return out;
+}
+
+
+
+function showOcrDebugCanvases(items) {
+  const grid = $('ocrDebugGrid');
+  const details = $('ocrDebugDetails');
+  if (!grid || !details) return;
+
+  grid.innerHTML = '';
+
+  for (const item of items) {
+    if (!item?.canvas) continue;
+
+    const card = document.createElement('div');
+    card.className = 'ocr-debug-card';
+
+    const label = document.createElement('div');
+    label.className = 'small';
+    label.textContent = item.name || '預覽';
+
+    const preview = document.createElement('canvas');
+    preview.width = item.canvas.width;
+    preview.height = item.canvas.height;
+
+    const ctx = preview.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0,0,preview.width,preview.height);
+    ctx.drawImage(item.canvas,0,0);
+
+    card.appendChild(label);
+    card.appendChild(preview);
+    grid.appendChild(card);
+  }
+
+  details.open = true;
+}
+
+function addOcrPadding(source, padRatio = 0.14) {
+  const padX = Math.max(12, Math.round(source.width * padRatio));
+  const padY = Math.max(10, Math.round(source.height * padRatio));
+
+  const out = document.createElement('canvas');
+  out.width = source.width + padX * 2;
+  out.height = source.height + padY * 2;
+
+  const ctx = out.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0,0,out.width,out.height);
+  ctx.drawImage(source,padX,padY);
+
+  return out;
+}
+
+function gentleDateVariants(sourceCanvas) {
+  const padded = addOcrPadding(sourceCanvas,0.14);
+  const variants = [];
+
+  // 平滑放大：一般印刷字比較適合
+  const smooth4 = upscaleCanvas(padded,4);
+  variants.push({
+    name:'平滑原圖 ×4',
+    canvas:smooth4,
+    psm:'7'
+  });
+
+  variants.push({
+    name:'平滑灰階 ×4',
+    canvas:preprocessCanvas(smooth4,'gray'),
+    psm:'7'
+  });
+
+  // 像素放大：保留點陣噴碼的原始點結構
+  const pixel6 = nearestUpscaleCanvas(padded,6);
+  variants.push({
+    name:'像素原圖 ×6',
+    canvas:pixel6,
+    psm:'13'
+  });
+
+  variants.push({
+    name:'像素灰階 ×6',
+    canvas:preprocessCanvas(pixel6,'gray'),
+    psm:'13'
+  });
+
+  variants.push({
+    name:'輕微銳化 ×6',
+    canvas:sharpenCanvas(pixel6),
+    psm:'7'
+  });
+
+  return variants;
+}
+
+function cropCanvasByRatio(source, x0, y0, x1, y1) {
+  const sx = Math.max(0, Math.floor(source.width * x0));
+  const sy = Math.max(0, Math.floor(source.height * y0));
+  const sw = Math.max(1, Math.floor(source.width * (x1 - x0)));
+  const sh = Math.max(1, Math.floor(source.height * (y1 - y0)));
+
+  const out = document.createElement('canvas');
+  out.width = sw;
+  out.height = sh;
+
+  out.getContext('2d').drawImage(
+    source,
+    sx, sy, sw, sh,
+    0, 0, sw, sh
+  );
+
+  return out;
+}
+
+function detectIncompleteYmd(text) {
+  const t = normalizeOcrText(text);
+
+  const m = t.match(
+    /(?:^|[^0-9])(\d{1,3})[./-](\d{1,2})[./-](\d{1,2})(?:$|[^0-9])/
+  );
+
+  if (!m) return null;
+
+  const yearToken = m[1];
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+
+  if (
+    month < 1 || month > 12 ||
+    day < 1 || day > 31
+  ) return null;
+
+  if (yearToken.length >= 4) return null;
+
+  return {
+    yearToken,
+    month,
+    day
+  };
+}
+
+async function runYearRecovery(sourceCanvas, logger) {
+  // 框選內容通常是單行日期，因此左半部優先視為年份區域。
+  // 留一點餘量避免把第 4 位年份切掉。
+  const yearCropRaw = cropCanvasByRatio(
+    sourceCanvas,
+    0.00, 0.05,
+    0.52, 0.95
+  );
+
+  const yearCrop = addOcrPadding(yearCropRaw,0.20);
+
+  const variants = [
+    {
+      name:'年份原圖 ×6',
+      canvas:nearestUpscaleCanvas(yearCrop,6),
+      psm:'7'
+    },
+    {
+      name:'年份原圖 ×8',
+      canvas:nearestUpscaleCanvas(yearCrop,8),
+      psm:'8'
+    },
+    {
+      name:'年份灰階 ×8',
+      canvas:preprocessCanvas(
+        nearestUpscaleCanvas(yearCrop,8),
+        'gray'
+      ),
+      psm:'8'
+    },
+    {
+      name:'年份銳化 ×8',
+      canvas:sharpenCanvas(
+        nearestUpscaleCanvas(yearCrop,8)
+      ),
+      psm:'13'
+    }
+  ];
+
+  window.__lastYearRecoveryDebug = [
+    { name:'年份裁切原圖', canvas:yearCropRaw },
+    ...variants
+  ];
+
+  const yearVotes = new Map();
+  const raw = [];
+
+  for (let i=0;i<variants.length;i++) {
+    const worker = await getDateOcrWorker(logger);
+
+    await worker.setParameters({
+      tessedit_char_whitelist:'0123456789',
+      tessedit_pageseg_mode:variants[i].psm,
+      preserve_interword_spaces:'0'
+    });
+
+    const result = await worker.recognize(
+      variants[i].canvas
+    );
+
+    const cleaned = String(result.data.text || '')
+      .replace(/\D/g,'')
+      .trim();
+
+    raw.push({
+      name:variants[i].name,
+      text:cleaned
+    });
+
+    const matches = cleaned.match(/20\d{2}/g) || [];
+
+    for (const y of matches) {
+      yearVotes.set(
+        y,
+        (yearVotes.get(y) || 0) + 1
+      );
+    }
+  }
+
+  // Restore normal full-date worker config.
+  const worker = await getDateOcrWorker(logger);
+  await worker.setParameters({
+    tessedit_char_whitelist:'0123456789./-',
+    tessedit_pageseg_mode:'7',
+    preserve_interword_spaces:'0'
+  });
+
+  return {
+    votes:[...yearVotes.entries()]
+      .sort((a,b)=>b[1]-a[1]),
+    raw
+  };
+}
+
+
+function normalizeOcrText(s) {
+  return String(s || '')
+    .replace(/[，,]/g,'.')
+    .replace(/[：:]/g,'.')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+function sanitizeDateOcrText(s) {
+  // 日期專用 OCR 最後再做一道保險：
+  // 僅保留數字、日期分隔符與空白 / 換行。
+  return String(s || '')
+    .replace(/[^0-9./\-\s]/g,'')
+    .replace(/[ \t]+/g,' ')
+    .replace(/\n{3,}/g,'\n\n')
+    .trim();
+}
+
+function collectDateVotes(ocrRuns) {
+  const voteMap = new Map();
+
+  for (const run of ocrRuns) {
+    const normalized = normalizeOcrText(run.text);
+    const candidates = extractDateCandidates(
+      normalized,
+      { strictOcrYear: true }
+    );
+
+    for (const c of candidates) {
+      if (!voteMap.has(c.iso)) {
+        voteMap.set(c.iso, {
+          iso: c.iso,
+          votes: 0,
+          score: 0,
+          sources: []
+        });
+      }
+
+      const item = voteMap.get(c.iso);
+      item.votes += 1;
+      item.score += Number(c.score || 0);
+      item.sources.push(run.name);
+    }
+  }
+
+  return [...voteMap.values()]
+    .sort((a,b) =>
+      b.votes - a.votes ||
+      b.score - a.score ||
+      a.iso.localeCompare(b.iso)
+    );
+}
+
+function findPartialDateHints(ocrRuns) {
+  const monthDayVotes = new Map();
+  const yearVotes = new Map();
+  const incompleteYearTokens = new Map();
+
+  for (const run of ocrRuns) {
+    const t = normalizeOcrText(run.text);
+
+    let m;
+
+    // 優先抓整個「年份.月.日」結構。
+    // 年份若不是 4 位，保留為「年份辨識不完整」，不直接補成 20YY。
+    const fullLikeRe = /(?:^|[^0-9])(\d{1,4})[./-](\d{1,2})[./-](\d{1,2})(?:$|[^0-9])/g;
+
+    while ((m = fullLikeRe.exec(t))) {
+      const yToken = m[1];
+      const mo = Number(m[2]);
+      const d = Number(m[3]);
+
+      if (mo < 1 || mo > 12 || d < 1 || d > 31) continue;
+
+      const mdKey =
+        String(mo).padStart(2,'0') + '-' +
+        String(d).padStart(2,'0');
+
+      monthDayVotes.set(
+        mdKey,
+        (monthDayVotes.get(mdKey) || 0) + 1
+      );
+
+      if (yToken.length === 4) {
+        const y = Number(yToken);
+
+        if (y >= 2000 && y <= 2100) {
+          yearVotes.set(
+            String(y),
+            (yearVotes.get(String(y)) || 0) + 1
+          );
+        }
+      } else {
+        incompleteYearTokens.set(
+          yToken,
+          (incompleteYearTokens.get(yToken) || 0) + 1
+        );
+      }
+    }
+
+    // 若 OCR 只抓到月.日，也保留月日資訊。
+    const mdRe = /(?:^|[^0-9])(\d{1,2})[./-](\d{1,2})(?:$|[^0-9])/g;
+
+    while ((m = mdRe.exec(t))) {
+      const mo = Number(m[1]);
+      const d = Number(m[2]);
+
+      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+        const key =
+          String(mo).padStart(2,'0') + '-' +
+          String(d).padStart(2,'0');
+
+        monthDayVotes.set(
+          key,
+          (monthDayVotes.get(key) || 0) + 1
+        );
+      }
+    }
+
+    // 另外抓明確的四位 20xx 年份。
+    const yRe = /\b(20\d{2})\b/g;
+
+    while ((m = yRe.exec(t))) {
+      const y = Number(m[1]);
+
+      if (y >= 2000 && y <= 2100) {
+        yearVotes.set(
+          String(y),
+          (yearVotes.get(String(y)) || 0) + 1
+        );
+      }
+    }
+  }
+
+  const bestMonthDay = [...monthDayVotes.entries()]
+    .sort((a,b)=>b[1]-a[1])[0] || null;
+
+  const years = [...yearVotes.entries()]
+    .sort((a,b)=>b[1]-a[1]);
+
+  const incompleteYears = [...incompleteYearTokens.entries()]
+    .sort((a,b)=>b[1]-a[1]);
+
+  return {
+    bestMonthDay,
+    years,
+    incompleteYears
+  };
+}
+
+function buildOcrCandidateUi(votes, ocrRuns) {
+  const box = $('ocrCandidateList');
+
+  if (!votes.length) {
+    const hints = findPartialDateHints(ocrRuns);
+
+    if (hints.bestMonthDay) {
+      const [md,count] = hints.bestMonthDay;
+
+      let html = `
+        <div class="small" style="margin-bottom:8px">
+          OCR 對完整年份不確定，但多次辨識都看到：
+          <b>${md}</b>
+          （${count} 次）
+        </div>
+      `;
+
+      if (hints.years.length) {
+        html += `
+          <div class="small">
+            辨識到的完整四位年份：
+            ${hints.years.slice(0,5)
+              .map(([y,n]) => `${y}（${n} 次）`)
+              .join('、')}
+          </div>
+        `;
+      }
+
+      if (hints.incompleteYears?.length) {
+        html += `
+          <div class="small" style="margin-top:6px;color:#b63737">
+            年份辨識不完整：
+            ${hints.incompleteYears.slice(0,5)
+              .map(([y,n]) => `${y}（${n} 次）`)
+              .join('、')}
+            。不會自動補成 20YY，請再試加強辨識或人工確認。
+          </div>
+        `;
+      }
+
+      box.innerHTML = html;
+    } else {
+      box.innerHTML =
+        '<div class="small">沒有找到可信的日期候選。</div>';
+    }
+
+    $('ocrApplyBtn').disabled = true;
+    return;
+  }
+
+  ocrCandidates = votes.map(v => ({
+    iso: v.iso,
+    source: v.sources.join(' / '),
+    score: v.score,
+    votes: v.votes
+  }));
+
+  const topVotes = votes[0].votes;
+  const highConfidence =
+    topVotes >= 2 &&
+    (votes.length === 1 || topVotes > votes[1].votes);
+
+  box.innerHTML = ocrCandidates.map((c,i) => {
+    let level = 'low';
+    let label = '低';
+
+    if (c.votes >= 3) {
+      level = 'high';
+      label = '高';
+    } else if (c.votes >= 2) {
+      level = 'mid';
+      label = '中';
+    }
+
+    return `
+      <label class="ocr-candidate">
+        <input
+          type="radio"
+          name="ocrCandidate"
+          value="${c.iso}"
+          ${i===0?'checked':''}
+        >
+        <div>
+          <b>${c.iso}</b>
+          <div class="small">
+            ${c.votes} 個影像版本辨識到
+          </div>
+          <div class="ocr-confidence ${level}">
+            可信度：${label}
+          </div>
+        </div>
+      </label>
+    `;
+  }).join('');
+
+  $('ocrApplyBtn').disabled = false;
+
+  if (!highConfidence && votes.length > 1) {
+    setStatus(
+      'ocrStatus',
+      '辨識結果有分歧，請人工確認年份後再套用。',
+      'err'
+    );
+  }
+}
+
 $('ocrStartBtn').onclick = async () => {
   if (!ocrImage) return;
 
@@ -2244,159 +3063,368 @@ $('ocrStartBtn').onclick = async () => {
 
   try {
     setBusy(btn,true,'辨識中…','快速辨識');
-    show('ocrAdvancedBtn', false);
-    $('ocrApplyBtn').disabled = true;
-    show('ocrResults', false);
-    show('ocrProgressBox', true);
-    $('ocrProgressBar').style.width = '5%';
+    show('ocrAdvancedBtn',false);
+    $('ocrApplyBtn').disabled=true;
+    show('ocrResults',false);
+    show('ocrProgressBox',true);
+    $('ocrProgressBar').style.width='5%';
 
     const base = makeOcrSourceCanvas();
 
-    // 小字 OCR 最常失敗在解析度不足，因此先放大 3 倍再灰階增強。
-    const enlarged = upscaleCanvas(base, 3);
-    const prepared = preprocessCanvas(enlarged, 'gray');
+    let paddleResult = null;
+    let paddleError = null;
+    let paddleVotes = [];
 
-    setStatus('ocrStatus','正在快速辨識日期…');
+    // --------------------------------------------------
+    // 1. PP-OCRv6：主力辨識
+    // --------------------------------------------------
+    try {
+      setStatus(
+        'ocrStatus',
+        paddleOcrInstance
+          ? '正在使用 PP-OCRv6 辨識日期…'
+          : '第一次使用 PP-OCRv6，正在載入模型並辨識…'
+      );
 
-    const result = await Tesseract.recognize(
-      prepared,
-      'eng',
-      {
-        logger: m => {
+      $('ocrProgressBar').style.width='20%';
+
+      paddleResult = await runPaddleOcr(base);
+
+      $('ocrProgressBar').style.width='72%';
+
+      paddleVotes = collectGeneralDateCandidates([{
+        name:'PP-OCRv6',
+        text:paddleResult.text
+      }]);
+
+    } catch (e) {
+      paddleError = e;
+      console.warn('PP-OCRv6 failed:',e);
+    }
+
+    // --------------------------------------------------
+    // 2. 找不到日期，或 PP-OCR 無法執行時才跑 Tesseract
+    // --------------------------------------------------
+    let tessText = '';
+    let tessVotes = [];
+
+    if (!paddleVotes.length) {
+      setStatus(
+        'ocrStatus',
+        paddleError
+          ? 'PP-OCRv6 無法執行，正在改用 Tesseract 備援…'
+          : 'PP-OCRv6 沒找到完整日期，正在用 Tesseract 再確認…'
+      );
+
+      $('ocrProgressBar').style.width='75%';
+
+      const tessCanvas = upscaleCanvas(
+        addOcrPadding(base,0.10),
+        3
+      );
+
+      const tessResult = await runGeneralOcr(
+        tessCanvas,
+        m => {
           if (
-            m.status === 'recognizing text' &&
-            typeof m.progress === 'number'
+            m.status==='recognizing text' &&
+            typeof m.progress==='number'
           ) {
             $('ocrProgressBar').style.width =
-              Math.max(5, m.progress * 100).toFixed(0) + '%';
+              (75 + m.progress*25).toFixed(0) + '%';
           }
-        }
-      }
+        },
+        'eng'
+      );
+
+      tessText = tessResult.data.text || '';
+
+      tessVotes = collectGeneralDateCandidates([{
+        name:'Tesseract 備援',
+        text:tessText
+      }]);
+    }
+
+    const votes = mergeDateVotes(
+      paddleVotes,
+      tessVotes
     );
 
     $('ocrProgressBar').style.width='100%';
 
-    const combined=result.data.text || '';
-    ocrCandidates=extractDateCandidates(combined);
+    let raw = '';
 
-    $('ocrRawText').textContent =
-      combined.trim() || '(沒有辨識到文字)';
-    renderOcrCandidates();
+    if (paddleResult) {
+      raw +=
+        '[PP-OCRv6]\n' +
+        paddleItemsToDebugText(paddleResult.items);
+    } else {
+      raw +=
+        '[PP-OCRv6]\n' +
+        '執行失敗：' +
+        (paddleError?.message || '未知錯誤');
+    }
+
+    if (tessText) {
+      raw +=
+        '\n\n[Tesseract 備援]\n' +
+        (tessText.trim() || '(空)');
+    }
+
+    $('ocrRawText').textContent = raw;
     show('ocrResults',true);
 
-    if(ocrCandidates.length) {
-      setStatus(
-        'ocrStatus',
-        `快速辨識完成，找到 ${ocrCandidates.length} 個日期候選。`,
-        'ok'
-      );
+    const allRuns = [];
+
+    if (paddleResult) {
+      allRuns.push({
+        name:'PP-OCRv6',
+        text:paddleResult.text
+      });
+    }
+
+    if (tessText) {
+      allRuns.push({
+        name:'Tesseract 備援',
+        text:tessText
+      });
+    }
+
+    if (votes.length) {
+      buildOcrCandidateUi(votes,allRuns);
+
+      if (paddleVotes.length) {
+        setStatus(
+          'ocrStatus',
+          'PP-OCRv6 辨識完成，已找到日期候選。',
+          'ok'
+        );
+      } else {
+        setStatus(
+          'ocrStatus',
+          'PP-OCRv6 沒找到完整日期；Tesseract 備援找到候選。',
+          'ok'
+        );
+      }
     } else {
+      buildOcrCandidateUi([],allRuns);
+
       setStatus(
         'ocrStatus',
-        '快速辨識沒有找到日期。建議先框選日期區域，再試「加強辨識（中 / 日文）」。',
+        '兩套 OCR 都沒有找到完整日期。可調整框選範圍、按「加強辨識」，或直接手動輸入。',
         'err'
       );
-      show('ocrAdvancedBtn', true);
     }
+
+    // 無論快速辨識成功與否，都允許使用者要求雙引擎交叉確認。
+    show('ocrAdvancedBtn',true);
+
   } catch(e) {
     setStatus(
       'ocrStatus',
-      '快速辨識失敗：'+e.message+'。可以改用加強辨識或手動輸入日期。',
+      '辨識失敗：' + e.message +
+      '。仍可使用加強辨識或手動輸入日期。',
       'err'
     );
-    show('ocrAdvancedBtn', true);
+
+    show('ocrAdvancedBtn',true);
+
   } finally {
-    setBusy(btn,false,'辨識中…','快速辨識');
+    setBusy(
+      btn,
+      false,
+      '辨識中…',
+      '快速辨識'
+    );
   }
 };
 
 $('ocrAdvancedBtn').onclick = async () => {
   if (!ocrImage) return;
 
-  const btn=$('ocrAdvancedBtn');
+  const btn = $('ocrAdvancedBtn');
 
   try {
-    setBusy(btn,true,'加強辨識中…','加強辨識（中 / 日文）');
+    setBusy(
+      btn,
+      true,
+      '加強辨識中…',
+      '加強日期辨識'
+    );
+
     $('ocrApplyBtn').disabled=true;
     show('ocrProgressBox',true);
     $('ocrProgressBar').style.width='5%';
-    setStatus(
-      'ocrStatus',
-      '正在加強辨識小字與點陣日期，第一次載入中 / 日文模型可能較久…'
-    );
 
-    const base=makeOcrSourceCanvas();
-    const enlarged=upscaleCanvas(base,3);
+    const base = makeOcrSourceCanvas();
 
-    const variants=[
-      preprocessCanvas(enlarged,'contrast'),
-      preprocessCanvas(enlarged,'softThreshold')
-    ];
+    // 顯示真正送入兩套 OCR 的框選影像，方便測試。
+    showOcrDebugCanvases([
+      {name:'實際框選區域',canvas:base}
+    ]);
 
-    let texts=[];
+    let paddleResult = null;
+    let paddleError = null;
+    let paddleVotes = [];
 
-    for(let i=0;i<variants.length;i++) {
-      const result=await Tesseract.recognize(
-        variants[i],
-        'eng+chi_tra+jpn',
-        {
-          logger:m=>{
-            if(
-              m.status==='recognizing text' &&
-              typeof m.progress==='number'
-            ) {
-              const overall=((i+m.progress)/variants.length)*100;
-              $('ocrProgressBar').style.width =
-                Math.max(5,overall).toFixed(0)+'%';
-            }
-          }
-        }
+    // --------------------------------------------------
+    // PP-OCRv6
+    // --------------------------------------------------
+    try {
+      setStatus(
+        'ocrStatus',
+        '加強辨識：PP-OCRv6 辨識中…'
       );
 
-      texts.push(result.data.text || '');
+      paddleResult = await runPaddleOcr(base);
+
+      paddleVotes = collectGeneralDateCandidates([{
+        name:'PP-OCRv6',
+        text:paddleResult.text
+      }]);
+
+    } catch(e) {
+      paddleError = e;
+      console.warn('PP-OCRv6 advanced failed:',e);
     }
+
+    $('ocrProgressBar').style.width='55%';
+
+    // --------------------------------------------------
+    // Tesseract：保持一般 OCR，不再做五種濾鏡
+    // --------------------------------------------------
+    setStatus(
+      'ocrStatus',
+      '加強辨識：正在用 Tesseract 交叉確認…'
+    );
+
+    const tessCanvas = upscaleCanvas(
+      addOcrPadding(base,0.10),
+      3
+    );
+
+    const tessResult = await runGeneralOcr(
+      tessCanvas,
+      m => {
+        if (
+          m.status==='recognizing text' &&
+          typeof m.progress==='number'
+        ) {
+          $('ocrProgressBar').style.width =
+            (55 + m.progress*45).toFixed(0) + '%';
+        }
+      },
+      'eng'
+    );
+
+    const tessText = tessResult.data.text || '';
+
+    const tessVotes = collectGeneralDateCandidates([{
+      name:'Tesseract',
+      text:tessText
+    }]);
+
+    const votes = mergeDateVotes(
+      paddleVotes,
+      tessVotes
+    );
 
     $('ocrProgressBar').style.width='100%';
 
-    const existingRaw=$('ocrRawText').textContent || '';
-    const added=texts.join('\n--- 加強版本 ---\n');
+    let raw =
+      '[PP-OCRv6]\n' +
+      (
+        paddleResult
+          ? paddleItemsToDebugText(paddleResult.items)
+          : '執行失敗：' +
+            (paddleError?.message || '未知錯誤')
+      );
 
-    const combined=
-      (existingRaw && !existingRaw.startsWith('('))
-        ? existingRaw + '\n--- 加強辨識 ---\n' + added
-        : added;
+    raw +=
+      '\n\n[Tesseract]\n' +
+      (tessText.trim() || '(空)');
 
-    ocrCandidates=extractDateCandidates(combined);
-    $('ocrRawText').textContent =
-      combined.trim() || '(沒有辨識到文字)';
-    renderOcrCandidates();
+    $('ocrRawText').textContent=raw;
     show('ocrResults',true);
 
-    if(ocrCandidates.length) {
-      setStatus(
-        'ocrStatus',
-        `加強辨識完成，找到 ${ocrCandidates.length} 個日期候選。`,
-        'ok'
-      );
+    const runs = [];
+
+    if (paddleResult) {
+      runs.push({
+        name:'PP-OCRv6',
+        text:paddleResult.text
+      });
+    }
+
+    runs.push({
+      name:'Tesseract',
+      text:tessText
+    });
+
+    buildOcrCandidateUi(votes,runs);
+
+    if (votes.length) {
+      const ppTop = paddleVotes[0]?.iso || null;
+      const tessTop = tessVotes[0]?.iso || null;
+
+      if (
+        ppTop &&
+        tessTop &&
+        ppTop === tessTop
+      ) {
+        setStatus(
+          'ocrStatus',
+          `兩套 OCR 都辨識為 ${ppTop}，可信度較高。`,
+          'ok'
+        );
+      } else if (ppTop) {
+        setStatus(
+          'ocrStatus',
+          'PP-OCRv6 已找到日期；Tesseract 結果可作為交叉參考。',
+          'ok'
+        );
+      } else if (tessTop) {
+        setStatus(
+          'ocrStatus',
+          'PP-OCRv6 沒找到完整日期，Tesseract 找到候選，請人工確認。',
+          'ok'
+        );
+      } else {
+        setStatus(
+          'ocrStatus',
+          '辨識完成，請確認候選日期。',
+          'ok'
+        );
+      }
     } else {
       setStatus(
         'ocrStatus',
-        '仍然沒有找到日期。建議把框選範圍縮到只剩日期文字，再辨識一次；也可以直接手動輸入。',
+        '兩套 OCR 都沒有取得完整日期。請調整框選範圍或直接手動輸入。',
         'err'
       );
     }
+
   } catch(e) {
     setStatus(
       'ocrStatus',
-      '加強辨識失敗：'+e.message+'。仍可直接手動輸入日期。',
+      '加強辨識失敗：' +
+      e.message +
+      '。仍可直接手動輸入日期。',
       'err'
     );
+
   } finally {
-    setBusy(btn,false,'加強辨識中…','加強辨識（中 / 日文）');
+    setBusy(
+      btn,
+      false,
+      '加強辨識中…',
+      '加強日期辨識'
+    );
   }
 };
 
-function extractDateCandidates(text) {
+function extractDateCandidates(text, options = {}) {
+  const strictOcrYear = !!options.strictOcrYear;
   const candidates = [];
   const seen = new Set();
 
@@ -2487,8 +3515,10 @@ function extractDateCandidates(text) {
     }
 
     // 3) 兩位年格式：YY.MM.DD
-    //    例如 23.03.16 -> 2023-03-16
-    {
+    //    一般文字解析仍支援，例如 23.03.16 -> 2023-03-16。
+    //    但 OCR 已經是「框選日期 + 日期專用模式」時，
+    //    若只剩兩位年份，優先視為 OCR 漏字，不自動補成 20YY。
+    if (!strictOcrYear) {
       const re = /\b(\d{2})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{1,2})\b/g;
       let m;
       while ((m = re.exec(line))) {
