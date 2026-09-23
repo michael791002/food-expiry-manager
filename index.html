@@ -168,6 +168,40 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
   .day{min-height:70px}
   .member{grid-template-columns:1fr}
 }
+
+.ocr-offline-box{
+  margin:0 0 14px;
+  border:1px solid #d6e6eb;
+  border-radius:12px;
+  padding:12px;
+  background:#f7fbfc;
+}
+.ocr-offline-row{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+}
+.ocr-offline-title{font-weight:800;color:#245361}
+.ocr-offline-status{font-size:13px;color:#667085;margin-top:4px;line-height:1.45}
+.ocr-offline-status.ok{color:#227a43}
+.ocr-offline-status.warn{color:#9a6414}
+.ocr-offline-status.err{color:#b63737}
+.ocr-offline-progress{
+  height:7px;
+  background:#e6eef1;
+  border-radius:999px;
+  overflow:hidden;
+  margin-top:9px;
+}
+.ocr-offline-progress>div{
+  height:100%;
+  width:0;
+  background:#1686a7;
+  transition:width .2s;
+}
+
 </style>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
@@ -366,6 +400,19 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
 <dialog id="ocrDialog">
   <div class="modal">
     <h2>掃描食品日期</h2>
+
+    <div id="ocrOfflineBox" class="ocr-offline-box">
+      <div class="ocr-offline-row">
+        <div>
+          <div class="ocr-offline-title">PP-OCRv6 Tiny 離線辨識包</div>
+          <div id="ocrOfflineStatus" class="ocr-offline-status">正在檢查…</div>
+        </div>
+        <button id="ocrOfflineDownloadBtn" class="ghost" type="button">下載 OCR 離線包</button>
+      </div>
+      <div id="ocrOfflineProgress" class="ocr-offline-progress hidden">
+        <div id="ocrOfflineProgressBar"></div>
+      </div>
+    </div>
 
     <label>選擇圖片來源</label>
 
@@ -1957,6 +2004,7 @@ let ocrCandidates = [];
 $('scanExpiryBtn').onclick = () => {
   resetOcrDialog();
   if (!$('ocrDialog').open) $('ocrDialog').showModal();
+  refreshOcrOfflineStatus();
 };
 
 $('ocrCloseBtn').onclick = () => $('ocrDialog').close();
@@ -2347,28 +2395,259 @@ async function getDateOcrWorker(logger) {
 
 
 
+const OCR_OFFLINE_PACK = {
+  version:'ppocrv6-tiny-v1',
+  modelCache:'food-expiry-ocr-model-ppocrv6-tiny-v1',
+  readyKey:new URL(
+    './__ocr_pack_ready_ppocrv6_tiny_v1__',
+    location.href
+  ).href,
+  assets:[
+    {
+      label:'文字偵測模型',
+      url:new URL(
+        './assets/ocr/PP-OCRv6_tiny_det_onnx_infer.tar',
+        location.href
+      ).href,
+      sha256:'ff6ab415b0a6e0c488550f2fb5d5046f1719848df220b2dc21b56402a65bc05d'
+    },
+    {
+      label:'文字辨識模型',
+      url:new URL(
+        './assets/ocr/PP-OCRv6_tiny_rec_onnx_infer.tar',
+        location.href
+      ).href,
+      sha256:'1e13b22717b1edd89d4cde4fda272b6c17d5b505c97c2baea99da1a3a2d54b29'
+    }
+  ]
+};
+
 let paddleOcrInstance = null;
 let paddleOcrInitPromise = null;
+let ocrServiceWorkerPromise = null;
 
-async function getPaddleOcr() {
+async function ensureOcrServiceWorker() {
+  if (!('serviceWorker' in navigator)) {
+    return false;
+  }
+
+  if (!/^https?:$/.test(location.protocol)) {
+    return false;
+  }
+
+  if (!ocrServiceWorkerPromise) {
+    ocrServiceWorkerPromise = (async () => {
+      const reg = await navigator.serviceWorker.register(
+        './service-worker.js',
+        {scope:'./'}
+      );
+
+      await navigator.serviceWorker.ready;
+
+      if (!navigator.serviceWorker.controller) {
+        await new Promise(resolve => {
+          let done = false;
+
+          const finish = () => {
+            if (done) return;
+            done = true;
+            resolve();
+          };
+
+          navigator.serviceWorker.addEventListener(
+            'controllerchange',
+            finish,
+            {once:true}
+          );
+
+          setTimeout(finish,3500);
+        });
+      }
+
+      return !!navigator.serviceWorker.controller;
+    })();
+  }
+
+  try {
+    return await ocrServiceWorkerPromise;
+  } catch (e) {
+    console.warn('Service Worker registration failed:',e);
+    ocrServiceWorkerPromise = null;
+    return false;
+  }
+}
+
+async function sha256Hex(buffer) {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    buffer
+  );
+
+  return [...new Uint8Array(digest)]
+    .map(b => b.toString(16).padStart(2,'0'))
+    .join('');
+}
+
+async function getOcrOfflineState() {
+  if (!('caches' in window)) {
+    return {
+      supported:false,
+      ready:false,
+      modelCount:0,
+      total:OCR_OFFLINE_PACK.assets.length
+    };
+  }
+
+  const cache = await caches.open(
+    OCR_OFFLINE_PACK.modelCache
+  );
+
+  let modelCount = 0;
+
+  for (const asset of OCR_OFFLINE_PACK.assets) {
+    if (await cache.match(asset.url)) {
+      modelCount++;
+    }
+  }
+
+  const marker = await cache.match(
+    OCR_OFFLINE_PACK.readyKey
+  );
+
+  return {
+    supported:true,
+    ready:
+      modelCount === OCR_OFFLINE_PACK.assets.length &&
+      !!marker,
+    modelCount,
+    total:OCR_OFFLINE_PACK.assets.length
+  };
+}
+
+async function refreshOcrOfflineStatus() {
+  const status = $('ocrOfflineStatus');
+  const btn = $('ocrOfflineDownloadBtn');
+
+  if (!status || !btn) return;
+
+  if (!/^https?:$/.test(location.protocol)) {
+    status.className='ocr-offline-status err';
+    status.textContent =
+      '離線模型需要在 GitHub Pages（HTTPS）上使用；直接雙擊 HTML 無法啟用。';
+    btn.disabled=true;
+    return;
+  }
+
+  try {
+    const state = await getOcrOfflineState();
+
+    if (!state.supported) {
+      status.className='ocr-offline-status err';
+      status.textContent =
+        '此瀏覽器不支援 Cache Storage，PP-OCR 將無法使用離線包。';
+      btn.disabled=true;
+      return;
+    }
+
+    btn.disabled=false;
+
+    if (state.ready) {
+      status.className='ocr-offline-status ok';
+      status.textContent =
+        '✅ 已下載。模型本體約 6.3 MB；正常情況下之後會直接從手機快取讀取。';
+      btn.textContent='重新檢查';
+    } else if (state.modelCount > 0) {
+      status.className='ocr-offline-status warn';
+      status.textContent =
+        `⚠ 模型已下載 ${state.modelCount}/${state.total}，但離線包尚未完整初始化。建議連 Wi‑Fi 後完成下載。`;
+      btn.textContent='完成 OCR 離線包';
+    } else {
+      status.className='ocr-offline-status warn';
+      status.textContent =
+        '⚠ 尚未下載。模型本體約 6.3 MB，另含首次需要的 OCR 執行元件；建議連 Wi‑Fi 後下載。';
+      btn.textContent='下載 OCR 離線包';
+    }
+  } catch (e) {
+    status.className='ocr-offline-status err';
+    status.textContent='檢查 OCR 離線包失敗：' + e.message;
+    btn.disabled=false;
+  }
+}
+
+async function cacheOneOcrModel(cache,asset) {
+  const existing = await cache.match(asset.url);
+
+  if (existing) {
+    // 已經在 Cache Storage 裡就不重新消耗網路流量。
+    return;
+  }
+
+  const response = await fetch(
+    asset.url,
+    {cache:'no-store'}
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `${asset.label}下載失敗（HTTP ${response.status}）。請確認 GitHub 上已上傳模型檔。`
+    );
+  }
+
+  // 下載當下做一次 SHA-256 驗證，避免模型檔損壞或傳錯版本。
+  const bytes = await response.clone().arrayBuffer();
+  const hash = await sha256Hex(bytes);
+
+  if (hash.toLowerCase() !== asset.sha256) {
+    throw new Error(
+      `${asset.label} SHA-256 不符，請重新執行模型下載腳本後再上傳。`
+    );
+  }
+
+  await cache.put(
+    asset.url,
+    response
+  );
+}
+
+async function initializePaddleOcrInternal({
+  allowNetworkInit=false
+}={}) {
   if (paddleOcrInstance) return paddleOcrInstance;
   if (paddleOcrInitPromise) return paddleOcrInitPromise;
 
-  paddleOcrInitPromise = (async () => {
-    if (!/^https?:$/.test(location.protocol)) {
-      throw new Error(
-        'PP-OCRv6 需要從 HTTP/HTTPS 網頁執行；目前是 ' +
-        location.protocol
-      );
-    }
+  if (!/^https?:$/.test(location.protocol)) {
+    throw new Error(
+      'PP-OCRv6 需要從 HTTP/HTTPS 網頁執行；目前是 ' +
+      location.protocol
+    );
+  }
 
+  if (!allowNetworkInit) {
+    const state = await getOcrOfflineState();
+
+    if (!state.ready) {
+      const err = new Error(
+        'PP-OCRv6 離線包尚未下載。為避免使用行動網路，系統不會自動下載模型。'
+      );
+      err.code='OCR_OFFLINE_PACK_NOT_READY';
+      throw err;
+    }
+  }
+
+  paddleOcrInitPromise = (async () => {
     const mod = await import(
       'https://cdn.jsdelivr.net/npm/@paddleocr/paddleocr-js@0.4.2/+esm'
     );
 
     paddleOcrInstance = await mod.PaddleOCR.create({
       textDetectionModelName:'PP-OCRv6_tiny_det',
+      textDetectionModelAsset:{
+        url:OCR_OFFLINE_PACK.assets[0].url
+      },
       textRecognitionModelName:'PP-OCRv6_tiny_rec',
+      textRecognitionModelAsset:{
+        url:OCR_OFFLINE_PACK.assets[1].url
+      },
       worker:false,
       ortOptions:{
         backend:'wasm',
@@ -2385,11 +2664,143 @@ async function getPaddleOcr() {
   try {
     return await paddleOcrInitPromise;
   } catch (e) {
-    paddleOcrInitPromise = null;
-    paddleOcrInstance = null;
+    paddleOcrInitPromise=null;
+    paddleOcrInstance=null;
     throw e;
   }
 }
+
+async function getPaddleOcr() {
+  const controlled = await ensureOcrServiceWorker();
+
+  if (!controlled) {
+    throw new Error(
+      'Service Worker 尚未就緒，為避免重新使用網路下載 OCR 資源，這次先不啟動 PP-OCRv6。'
+    );
+  }
+
+  return initializePaddleOcrInternal({
+    allowNetworkInit:false
+  });
+}
+
+async function downloadOcrOfflinePack() {
+  const btn = $('ocrOfflineDownloadBtn');
+  const status = $('ocrOfflineStatus');
+  const progress = $('ocrOfflineProgress');
+  const bar = $('ocrOfflineProgressBar');
+
+  if (!btn || !status || !progress || !bar) return;
+
+  const oldText = btn.textContent;
+
+  try {
+    btn.disabled=true;
+    progress.classList.remove('hidden');
+    bar.style.width='3%';
+
+    status.className='ocr-offline-status';
+    status.textContent='正在啟用離線快取…';
+
+    const controlled = await ensureOcrServiceWorker();
+
+    if (!controlled) {
+      throw new Error(
+        'Service Worker 尚未取得控制權。請重新整理頁面後再按一次下載。'
+      );
+    }
+
+    const cache = await caches.open(
+      OCR_OFFLINE_PACK.modelCache
+    );
+
+    // 開始前先移除 ready marker。
+    await cache.delete(
+      OCR_OFFLINE_PACK.readyKey
+    );
+
+    for (let i=0;i<OCR_OFFLINE_PACK.assets.length;i++) {
+      const asset=OCR_OFFLINE_PACK.assets[i];
+
+      status.textContent =
+        `正在準備 ${asset.label}（${i+1}/${OCR_OFFLINE_PACK.assets.length}）…`;
+
+      await cacheOneOcrModel(
+        cache,
+        asset
+      );
+
+      bar.style.width =
+        `${15 + ((i+1)/OCR_OFFLINE_PACK.assets.length)*55}%`;
+    }
+
+    status.textContent =
+      '模型已快取，正在初始化 PP-OCRv6 與執行元件…';
+    bar.style.width='78%';
+
+    // 只有使用者明確按下下載時，才允許 SDK / WASM 初次下載。
+    paddleOcrInstance=null;
+    paddleOcrInitPromise=null;
+
+    await initializePaddleOcrInternal({
+      allowNetworkInit:true
+    });
+
+    bar.style.width='96%';
+
+    await cache.put(
+      OCR_OFFLINE_PACK.readyKey,
+      new Response(
+        JSON.stringify({
+          version:OCR_OFFLINE_PACK.version,
+          readyAt:new Date().toISOString()
+        }),
+        {
+          headers:{
+            'Content-Type':'application/json'
+          }
+        }
+      )
+    );
+
+    bar.style.width='100%';
+
+    status.className='ocr-offline-status ok';
+    status.textContent =
+      '✅ OCR 離線包已準備完成。之後會優先從手機快取讀取。';
+
+    btn.textContent='重新檢查';
+
+    setTimeout(() => {
+      progress.classList.add('hidden');
+      bar.style.width='0';
+    },900);
+
+  } catch(e) {
+    console.error(e);
+
+    status.className='ocr-offline-status err';
+    status.textContent =
+      'OCR 離線包下載失敗：' + e.message;
+
+    btn.textContent=oldText;
+
+  } finally {
+    btn.disabled=false;
+  }
+}
+
+$('ocrOfflineDownloadBtn').onclick = async () => {
+  const state = await getOcrOfflineState();
+
+  if (state.ready) {
+    await refreshOcrOfflineStatus();
+    return;
+  }
+
+  await downloadOcrOfflinePack();
+};
+
 
 async function runPaddleOcr(canvas) {
   const ocr = await getPaddleOcr();
@@ -3634,6 +4045,10 @@ function restoreLastLoginEmail() {
 }
 
 restoreLastLoginEmail();
+
+ensureOcrServiceWorker().then(() => {
+  refreshOcrOfflineStatus();
+});
 
 restoreSession();
 </script>
